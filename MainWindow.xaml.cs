@@ -1,33 +1,46 @@
+using System;
+using System.IO;
 using System.Windows;
-using System.Windows.Automation;
+using TelegramWin.Services;
+using TdLib;
 
 namespace TelegramWin
 {
     public partial class MainWindow : Window
     {
+        private readonly TdLibService _td = new TdLibService();
+        private AppConfig _cfg = new AppConfig();
+
         public MainWindow()
         {
             InitializeComponent();
+            _td.AuthorizationChanged += OnAuthChanged;
+            try { _cfg = AppConfig.Load(); } catch { }
+            StatusBox.Text = "Заполните ApiId и ApiHash в appsettings.json.";
         }
 
-        private void SendCode_Click(object sender, RoutedEventArgs e)
+        private async void SendPhone_Click(object sender, RoutedEventArgs e)
         {
-            StatusText.Text = $"Код отправлен на номер {PhoneBox.Text}";
-            AutomationProperties.SetLiveSetting(StatusText, AutomationLiveSetting.Assertive);
+            await _td.StartAsync(_cfg.ApiId, _cfg.ApiHash, "tdlib");
+            await _td.SendPhoneAsync(PhoneBox.Text);
         }
 
-        private void ConfirmCode_Click(object sender, RoutedEventArgs e)
+        private async void SendCode_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(CodeBox.Text))
-            {
-                StatusText.Text = "Введите код подтверждения.";
-            }
-            else
-            {
-                StatusText.Text = "Код подтверждён (демо режим).";
-            }
+            await _td.SendCodeAsync(CodeBox.Text);
+        }
 
-            AutomationProperties.SetLiveSetting(StatusText, AutomationLiveSetting.Assertive);
+        private async void SendPassword_Click(object sender, RoutedEventArgs e)
+        {
+            await _td.SendPasswordAsync(PwdBox.Password);
+        }
+
+        private void OnAuthChanged(TdApi.UpdateAuthorizationState auth)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                StatusBox.Text = auth.AuthorizationState.GetType().Name;
+            });
         }
     }
 }

@@ -1,9 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="TDLib" Version="1.8.60" />
+    <PackageReference Include="TDLib.Api" Version="1.8.60" />
+    <PackageReference Include="tdlib.native" Version="1.8.60" />
+  </ItemGroup>
 </Project>
