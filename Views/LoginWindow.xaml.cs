@@ -24,12 +24,15 @@ namespace TelegramWin.Views
             _td.AuthStepChanged += step => FocusForStep(step);
             _td.Authorized += OnAuthorized;
 
-            Loaded += (_, _) => _announcer.Say("Окно входа. Ожидаю состояние TDLib.");
+            Loaded += (_, _) =>
+            {
+                PhoneBox?.Focus();
+                _announcer.Say("Окно входа. Введите номер телефона.");
+            };
         }
 
         private void FocusForStep(AuthStep step)
         {
-            // Важный момент для JAWS: переводим фокус на нужное поле.
             Dispatcher.InvokeAsync(() =>
             {
                 switch (step)
@@ -49,23 +52,11 @@ namespace TelegramWin.Views
 
         private void OnAuthorized()
         {
-            Dispatcher.InvokeAsync(() =>
-            {
-                _announcer.Say("Авторизация завершена. Далее будет главное окно.");
-                // Пока оставляем окно входа открытым.
-                // Следующим патчем добавим MainWindow + список чатов.
-            });
+            Dispatcher.InvokeAsync(() => _announcer.Say("Авторизация завершена."));
         }
 
-        private async void SendPhone_Click(object sender, RoutedEventArgs e)
-        {
-            await _vm.SendPhoneAsync();
-        }
-
-        private async void SendCode_Click(object sender, RoutedEventArgs e)
-        {
-            await _vm.SendCodeAsync();
-        }
+        private async void SendPhone_Click(object sender, RoutedEventArgs e) => await _vm.SendPhoneAsync();
+        private async void SendCode_Click(object sender, RoutedEventArgs e) => await _vm.SendCodeAsync();
 
         private async void SendPassword_Click(object sender, RoutedEventArgs e)
         {
