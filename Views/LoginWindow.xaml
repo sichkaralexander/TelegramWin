@@ -1,0 +1,75 @@
+<Window x:Class="TelegramWin.Views.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TelegramWin — Вход" Height="420" Width="520"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Live region для JAWS -->
+        <TextBlock x:Name="LiveStatus"
+                   Opacity="0.01"
+                   Height="1"
+                   AutomationProperties.LiveSetting="Assertive"
+                   AutomationProperties.Name="{Binding StatusText}" />
+
+        <TextBlock Grid.Row="0" Text="Авторизация Telegram" FontSize="18" FontWeight="SemiBold"/>
+
+        <StackPanel Grid.Row="1" Margin="0,16,0,0" VerticalAlignment="Top">
+
+            <TextBlock Text="Статус:" FontWeight="Bold"/>
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,6,0,16"/>
+
+            <!-- Телефон -->
+            <GroupBox Header="Номер телефона" Visibility="{Binding IsPhoneStep, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel Margin="10">
+                    <TextBlock Text="Введите номер в международном формате, например +79990000000"/>
+                    <TextBox x:Name="PhoneBox"
+                             Text="{Binding Phone, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Номер телефона"
+                             Margin="0,8,0,8"/>
+                    <Button x:Name="SendPhoneButton"
+                            Content="Отправить номер"
+                            AutomationProperties.Name="Отправить номер"
+                            Click="SendPhone_Click"/>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Код -->
+            <GroupBox Header="Код" Visibility="{Binding IsCodeStep, Converter={StaticResource BoolToVisibility}}" Margin="0,12,0,0">
+                <StackPanel Margin="10">
+                    <TextBox x:Name="CodeBox"
+                             Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}"
+                             AutomationProperties.Name="Код подтверждения"
+                             Margin="0,8,0,8"/>
+                    <Button x:Name="SendCodeButton"
+                            Content="Подтвердить код"
+                            AutomationProperties.Name="Подтвердить код"
+                            Click="SendCode_Click"/>
+                </StackPanel>
+            </GroupBox>
+
+            <!-- Пароль -->
+            <GroupBox Header="Пароль 2FA" Visibility="{Binding IsPasswordStep, Converter={StaticResource BoolToVisibility}}" Margin="0,12,0,0">
+                <StackPanel Margin="10">
+                    <PasswordBox x:Name="PasswordBox"
+                                 AutomationProperties.Name="Пароль двухфакторной защиты"
+                                 Margin="0,8,0,8"/>
+                    <Button x:Name="SendPasswordButton"
+                            Content="Войти"
+                            AutomationProperties.Name="Войти"
+                            Click="SendPassword_Click"/>
+                </StackPanel>
+            </GroupBox>
+
+        </StackPanel>
+
+        <TextBlock Grid.Row="2" Margin="0,16,0,0" TextWrapping="Wrap">
+            Используйте Tab для перехода по элементам. Статусы озвучиваются.
+        </TextBlock>
+    </Grid>
+</Window>

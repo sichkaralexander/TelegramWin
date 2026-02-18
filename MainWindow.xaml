@@ -1,32 +1,22 @@
 <Window x:Class="TelegramWin.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="TelegramWin"
-        Height="560" Width="820"
+        Title="TelegramWin" Height="360" Width="520"
         WindowStartupLocation="CenterScreen">
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <Grid Margin="16">
+        <!-- Live region для JAWS -->
+        <TextBlock x:Name="LiveStatus"
+                   Opacity="0.01"
+                   Height="1"
+                   AutomationProperties.LiveSetting="Assertive"
+                   AutomationProperties.Name="{Binding StatusText}" />
 
-        <TextBlock Grid.Row="0" Text="Вход в Telegram" FontSize="22" Margin="0,0,0,18"/>
-
-        <TextBox x:Name="PhoneBox" Grid.Row="1" Margin="0,6,0,10"/>
-        <Button Content="Отправить код" Grid.Row="2" Click="SendPhone_Click"/>
-
-        <TextBox x:Name="CodeBox" Grid.Row="3" Margin="0,6,0,10"/>
-        <Button Content="Подтвердить код" Grid.Row="4" Click="SendCode_Click"/>
-
-        <PasswordBox x:Name="PwdBox" Grid.Row="5" Margin="0,6,0,10"/>
-        <Button Content="Отправить пароль 2FA" Grid.Row="6" Click="SendPassword_Click"/>
-
-        <TextBox x:Name="StatusBox" Grid.Row="7" IsReadOnly="True" TextWrapping="Wrap"/>
+        <StackPanel>
+            <TextBlock Text="TelegramWin" FontSize="18" FontWeight="SemiBold"/>
+            <TextBlock Margin="0,12,0,0" TextWrapping="Wrap"
+                       Text="Сейчас используется окно входа. Это окно временно оставлено для совместимости проекта."/>
+            <Button Margin="0,16,0,0" Content="Открыть окно входа" Click="OpenLogin_Click"
+                    AutomationProperties.Name="Открыть окно входа"/>
+        </StackPanel>
     </Grid>
 </Window>

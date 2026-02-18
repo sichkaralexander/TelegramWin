@@ -43,6 +43,20 @@
       "frameworks": {
         "net8.0-windows7.0": {
           "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "TDLib": {
+              "target": "Package",
+              "version": "[1.8.60, )"
+            },
+            "TDLib.Api": {
+              "target": "Package",
+              "version": "[1.8.60, )"
+            },
+            "tdlib.native": {
+              "target": "Package",
+              "version": "[1.8.60, )"
+            }
+          },
           "imports": [
             "net461",
             "net462",
@@ -81,6 +95,11 @@
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\10.0.103/PortableRuntimeIdentifierGraph.json"
+        }
+      },
+      "runtimes": {
+        "win-x64": {
+          "#import": []
         }
       }
     }

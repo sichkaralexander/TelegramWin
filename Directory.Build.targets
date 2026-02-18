@@ -1,0 +1,15 @@
+<Project>
+  <Target Name="CopyTdLibNativeBinaries" AfterTargets="Build">
+    <ItemGroup>
+      <_TdLibNative Include="$(NuGetPackageRoot)tdlib\*\runtimes\win-x64\native\*.dll"
+                    Condition="Exists('$(NuGetPackageRoot)tdlib\')" />
+    </ItemGroup>
+
+    <Message Text="Copying TDLib native binaries: @(_TdLibNative)" Importance="Low" />
+
+    <Copy SourceFiles="@(_TdLibNative)"
+          DestinationFolder="$(TargetDir)"
+          SkipUnchangedFiles="true"
+          Condition="'@(_TdLibNative)' != ''" />
+  </Target>
+</Project>
