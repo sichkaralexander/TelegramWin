@@ -14,7 +14,9 @@ namespace TelegramWin.Views
         {
             InitializeComponent();
 
-            _td = new TdLibService();
+            // ✅ Берём один общий TdLibService, созданный в App.xaml.cs
+            _td = App.TdLib;
+
             _announcer = new Announcer(this);
 
             _vm = new LoginViewModel(_td);
@@ -22,7 +24,6 @@ namespace TelegramWin.Views
 
             _td.StatusChanged += s => _announcer.Say(s);
             _td.AuthStepChanged += step => FocusForStep(step);
-            _td.Authorized += OnAuthorized;
 
             Loaded += (_, _) =>
             {
@@ -48,11 +49,6 @@ namespace TelegramWin.Views
                         break;
                 }
             });
-        }
-
-        private void OnAuthorized()
-        {
-            Dispatcher.InvokeAsync(() => _announcer.Say("Авторизация завершена."));
         }
 
         private async void SendPhone_Click(object sender, RoutedEventArgs e) => await _vm.SendPhoneAsync();
