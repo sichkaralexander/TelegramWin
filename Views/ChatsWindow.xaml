@@ -20,7 +20,9 @@
                  ItemsSource="{Binding Chats}"
                  DisplayMemberPath="AccessibleText"
                  KeyboardNavigation.DirectionalNavigation="Contained"
-                 AutomationProperties.Name="Список чатов">
+                 AutomationProperties.Name="Список чатов"
+                 KeyDown="ChatsList_KeyDown"
+                 MouseDoubleClick="ChatsList_MouseDoubleClick">
             <ListBox.ItemContainerStyle>
                 <Style TargetType="ListBoxItem">
                     <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleText}"/>
