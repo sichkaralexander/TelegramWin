@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -12,6 +13,9 @@ namespace TelegramWin.Views
     public partial class MessagesWindow : Window
     {
         private readonly MessagesShellViewModel _vm;
+        private bool _initialFocusDone;
+
+        private ScrollViewer? _scroll;
 
         public MessagesWindow(TdLibService td, long chatId, string title)
         {
@@ -20,17 +24,65 @@ namespace TelegramWin.Views
             _vm = new MessagesShellViewModel(td, chatId, title);
             DataContext = _vm;
 
-            Loaded += (_, __) =>
+            Loaded += async (_, __) =>
             {
-                _vm.LoadTestMessages();
+                await _vm.LoadLatestMessagesAsync(80);
 
-                // Важно: даём разметке построиться и фокусим именно TextBlock последнего сообщения.
-                Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(FocusLastMessageTextForJaws));
+                // Подключаем ScrollViewer после того как визуальное дерево есть
+                _scroll = FindVisualChild<ScrollViewer>(MessagesList);
+                if (_scroll != null)
+                    _scroll.ScrollChanged += Scroll_ScrollChanged;
+
+                // Фокус на последний элемент — с ретраями
+                BeginInitialFocus();
+            };
+
+            ContentRendered += (_, __) =>
+            {
+                if (!_initialFocusDone)
+                    BeginInitialFocus();
             };
         }
 
-        private void FocusLastMessageTextForJaws()
+        private async void Scroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
         {
+            if (_scroll == null)
+                return;
+
+            // Дошли до самого верха -> дозагрузить ещё 30 старых сообщений
+            // Используем небольшой порог, чтобы срабатывало стабильно
+            if (_scroll.VerticalOffset <= 0.0 && _vm.CanLoadOlder)
+            {
+                // Сохраняем позицию, чтобы после вставки сверху "не прыгало"
+                double oldExtent = _scroll.ExtentHeight;
+                double oldOffset = _scroll.VerticalOffset;
+
+                await _vm.LoadOlderMessagesAsync(30);
+
+                // Ждём перерасчёт размеров и восстанавливаем позицию
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    if (_scroll == null) return;
+                    double newExtent = _scroll.ExtentHeight;
+                    double delta = newExtent - oldExtent;
+                    _scroll.ScrollToVerticalOffset(oldOffset + delta);
+                }));
+            }
+        }
+
+        private void BeginInitialFocus()
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+            {
+                TryFocusLastMessageWithRetries(attempts: 10, delayMs: 80);
+            }));
+        }
+
+        private void TryFocusLastMessageWithRetries(int attempts, int delayMs)
+        {
+            if (_initialFocusDone)
+                return;
+
             if (_vm.Messages.Count == 0)
                 return;
 
@@ -43,47 +95,57 @@ namespace TelegramWin.Views
                 MessagesList.UpdateLayout();
                 MessagesList.ScrollIntoView(last);
                 MessagesList.UpdateLayout();
+            }
+            catch { }
 
-                if (MessagesList.ItemContainerGenerator.ContainerFromItem(last) is FrameworkElement container)
+            if (MessagesList.ItemContainerGenerator.ContainerFromItem(last) is FrameworkElement container)
+            {
+                try
                 {
                     container.BringIntoView();
-                    container.UpdateLayout();
-
-                    // Находим TextBlock с текстом сообщения и ставим фокус на него.
-                    var tb = FindFirstFocusableTextBlock(container);
-                    if (tb != null)
-                    {
-                        tb.BringIntoView();
-                        Keyboard.Focus(tb);
-                        tb.Focus();
-                        return;
-                    }
-
-                    // Фоллбек: фокус на контейнер.
                     Keyboard.Focus(container);
                     container.Focus();
+                    _initialFocusDone = true;
+                    return;
                 }
-                else
+                catch { }
+            }
+
+            attempts--;
+            if (attempts <= 0)
+            {
+                try
                 {
+                    Keyboard.Focus(MessagesList);
                     MessagesList.Focus();
                 }
+                catch { }
+                _initialFocusDone = true;
+                return;
             }
-            catch
+
+            var timer = new DispatcherTimer(DispatcherPriority.Background)
             {
-                try { MessagesList.Focus(); } catch { }
-            }
+                Interval = TimeSpan.FromMilliseconds(delayMs)
+            };
+            timer.Tick += (_, __) =>
+            {
+                timer.Stop();
+                TryFocusLastMessageWithRetries(attempts, delayMs);
+            };
+            timer.Start();
         }
 
-        private static System.Windows.Controls.TextBlock? FindFirstFocusableTextBlock(DependencyObject root)
+        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            int count = VisualTreeHelper.GetChildrenCount(parent);
+            for (int i = 0; i < count; i++)
             {
-                var child = VisualTreeHelper.GetChild(root, i);
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T typed)
+                    return typed;
 
-                if (child is System.Windows.Controls.TextBlock tb && tb.Focusable)
-                    return tb;
-
-                var found = FindFirstFocusableTextBlock(child);
+                var found = FindVisualChild<T>(child);
                 if (found != null)
                     return found;
             }

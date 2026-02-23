@@ -58,7 +58,7 @@ namespace TelegramWin.ViewModels
                     {
                         var chat = await _td.ExecuteAsync(new TdApi.GetChat { ChatId = item.Id });
                         item.Title = chat.Title ?? "(без названия)";
-                        item.LastMessage = ExtractText(chat.LastMessage);
+                        item.LastMessage = MessagePreviewFormatter.FromMessage(chat.LastMessage);
                     }
                     catch { }
                 }
@@ -99,21 +99,9 @@ namespace TelegramWin.ViewModels
 
                 var item = Chats.FirstOrDefault(x => x.Id == chatId);
                 if (item != null)
-                    item.LastMessage = ExtractText(lastMsgObj);
+                    item.LastMessage = MessagePreviewFormatter.FromMessage(lastMsgObj);
             }
             catch { }
-        }
-
-        private static string ExtractText(TdApi.Message? msg)
-        {
-            if (msg == null) return "";
-            try
-            {
-                if (msg.Content is TdApi.MessageContent.MessageText mt)
-                    return mt.Text?.Text ?? "";
-            }
-            catch { }
-            return "";
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

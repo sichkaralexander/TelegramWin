@@ -1,0 +1,19 @@
+1?? Переход в папку проекта
+bat
+Копировать
+cd /d E:\TelegramWin
+
+2?? Сборка
+bat
+Копировать
+dotnet clean
+dotnet build -c Debug -r win-x64
+
+3?? Запуск
+bat
+Копировать
+cd /d E:\TelegramWin\bin\Debug\net8.0-windows\win-x64
+TelegramWin.exe
+-----
+
+Теперь по 
