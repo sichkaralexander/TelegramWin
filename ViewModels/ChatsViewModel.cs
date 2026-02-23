@@ -46,12 +46,80 @@ namespace TelegramWin.ViewModels
             try
             {
                 Status = "Получаю список чатов…";
-                var chats = await _td.ExecuteAsync(new TdApi.GetChats { Limit = 50 });
-
                 Chats.Clear();
-                foreach (var id in chats.ChatIds)
-                    Chats.Add(new ChatItem(id));
 
+                // У разных версий TdLib.Api/TDLib сигнатуры GetChats отличаются.
+                // Делаем "мягкую" пагинацию через reflection:
+                // - если есть OffsetChatId + OffsetOrder И у Chat есть Order → грузим страницами
+                // - иначе → один вызов GetChats с большим Limit
+                const int pageSize = 100;
+                const int maxTotal = 500;
+
+                long offsetChatId = 0;
+                long offsetOrder = long.MaxValue;
+
+                var reqType = typeof(TdApi.GetChats);
+                var pOffsetChatId = reqType.GetProperty("OffsetChatId");
+                var pOffsetOrder = reqType.GetProperty("OffsetOrder");
+
+                var chatType = typeof(TdApi.Chat);
+                var pChatOrder = chatType.GetProperty("Order");
+
+                bool canPage = pOffsetChatId != null && pOffsetOrder != null && pChatOrder != null;
+
+                int total = 0;
+
+                while (total < maxTotal)
+                {
+                    var req = new TdApi.GetChats { Limit = canPage ? pageSize : maxTotal };
+
+                    if (canPage)
+                    {
+                        try { pOffsetChatId!.SetValue(req, offsetChatId); } catch { }
+                        try { pOffsetOrder!.SetValue(req, offsetOrder); } catch { }
+                    }
+
+                    var page = await _td.ExecuteAsync(req);
+
+                    if (page?.ChatIds == null || page.ChatIds.Length == 0)
+                        break;
+
+                    foreach (var id in page.ChatIds)
+                    {
+                        if (Chats.Any(c => c.Id == id))
+                            continue;
+
+                        Chats.Add(new ChatItem(id));
+                        total++;
+                        if (total >= maxTotal)
+                            break;
+                    }
+
+                    if (!canPage)
+                        break;
+
+                    // следующий оффсет — по последнему чату страницы
+                    var lastId = page.ChatIds.Last();
+                    var lastChat = await _td.ExecuteAsync(new TdApi.GetChat { ChatId = lastId });
+
+                    offsetChatId = lastId;
+
+                    // Order читаем через reflection (чтобы не зависеть от конкретной версии API)
+                    try
+                    {
+                        var val = pChatOrder!.GetValue(lastChat);
+                        offsetOrder = val == null ? 0 : Convert.ToInt64(val);
+                    }
+                    catch
+                    {
+                        offsetOrder = 0;
+                    }
+
+                    if (offsetOrder == 0)
+                        break;
+                }
+
+                // Заполняем Title и LastMessage
                 foreach (var item in Chats)
                 {
                     try
@@ -63,7 +131,7 @@ namespace TelegramWin.ViewModels
                     catch { }
                 }
 
-                Status = "Чаты загружены";
+                Status = $"Чаты загружены: {Chats.Count}";
             }
             catch (Exception ex)
             {
@@ -75,8 +143,6 @@ namespace TelegramWin.ViewModels
         {
             try
             {
-                // ✅ НЕ используем TdApi.UpdateChatLastMessage напрямую (его может не быть).
-                // Вместо этого определяем по имени типа и читаем свойства через reflection.
                 if (!string.Equals(update.GetType().Name, "UpdateChatLastMessage", StringComparison.Ordinal))
                     return;
 

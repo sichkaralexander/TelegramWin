@@ -11,7 +11,7 @@ using TelegramWin.Services;
 
 namespace TelegramWin.ViewModels
 {
-    public sealed class MessagesShellViewModel : INotifyPropertyChanged
+    public sealed class MessagesShellViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly TdLibService _td;
         private readonly long _chatId;
@@ -23,16 +23,19 @@ namespace TelegramWin.ViewModels
 
         private readonly Dictionary<long, string> _userCache = new();
 
-        // дедуп + дозагрузка
         private readonly HashSet<long> _loadedMessageIds = new();
         private long _oldestMessageIdLoaded;
         private bool _hasMoreOlder = true;
         private int _isLoadingOlderFlag = 0;
         private readonly SemaphoreSlim _olderGate = new(1, 1);
 
+        private bool _disposed;
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
         public ObservableCollection<MessageDisplayItem> Messages { get; } = new();
+
+        public event Action<MessageDisplayItem>? NewMessageArrived;
 
         public string Title
         {
@@ -74,14 +77,27 @@ namespace TelegramWin.ViewModels
             _oldestMessageIdLoaded = 0;
             _hasMoreOlder = true;
 
-            var history = await _td.ExecuteAsync(new TdApi.GetChatHistory
+            await EnsureChatOpenedAsync();
+
+            TdApi.Messages? history = null;
+
+            for (int attempt = 0; attempt < 5; attempt++)
             {
-                ChatId = _chatId,
-                FromMessageId = 0,
-                Offset = 0,
-                Limit = limit,
-                OnlyLocal = false
-            });
+                history = await _td.ExecuteAsync(new TdApi.GetChatHistory
+                {
+                    ChatId = _chatId,
+                    FromMessageId = 0,
+                    Offset = 0,
+                    Limit = limit,
+                    OnlyLocal = false
+                });
+
+                var count = history?.Messages_?.Length ?? 0;
+                if (count >= 2)
+                    break;
+
+                await Task.Delay(180);
+            }
 
             if (history?.Messages_ == null || history.Messages_.Length == 0)
             {
@@ -92,8 +108,7 @@ namespace TelegramWin.ViewModels
 
             Array.Reverse(history.Messages_);
 
-            // Формируем список в фоне, добавляем в UI одним блоком (важно для порядка).
-            var prepared = new List<(long id, MessageDisplayItem item)>(history.Messages_.Length);
+            var prepared = new List<MessageDisplayItem>(history.Messages_.Length);
 
             foreach (var m in history.Messages_)
             {
@@ -101,7 +116,7 @@ namespace TelegramWin.ViewModels
                 if (m.Id != 0 && _loadedMessageIds.Contains(m.Id)) continue;
 
                 var item = await BuildDisplayItemAsync(m);
-                prepared.Add((m.Id, item));
+                prepared.Add(item);
 
                 if (m.Id != 0) _loadedMessageIds.Add(m.Id);
             }
@@ -111,8 +126,8 @@ namespace TelegramWin.ViewModels
             _ui.Post(_ =>
             {
                 Messages.Clear();
-                foreach (var pair in prepared)
-                    Messages.Add(pair.item);
+                foreach (var item in prepared)
+                    Messages.Add(item);
             }, null);
 
             Status = "";
@@ -147,7 +162,7 @@ namespace TelegramWin.ViewModels
 
                 Array.Reverse(history.Messages_);
 
-                var prepared = new List<(long id, MessageDisplayItem item)>(history.Messages_.Length);
+                var prepared = new List<MessageDisplayItem>(history.Messages_.Length);
 
                 foreach (var m in history.Messages_)
                 {
@@ -155,7 +170,7 @@ namespace TelegramWin.ViewModels
                     if (m.Id != 0 && _loadedMessageIds.Contains(m.Id)) continue;
 
                     var item = await BuildDisplayItemAsync(m);
-                    prepared.Add((m.Id, item));
+                    prepared.Add(item);
 
                     if (m.Id != 0) _loadedMessageIds.Add(m.Id);
                 }
@@ -167,9 +182,8 @@ namespace TelegramWin.ViewModels
 
                 _ui.Post(_ =>
                 {
-                    // Вставляем сверху, сохраняя порядок prepared (он уже от старых к новым)
                     for (int i = prepared.Count - 1; i >= 0; i--)
-                        Messages.Insert(0, prepared[i].item);
+                        Messages.Insert(0, prepared[i]);
                 }, null);
             }
             finally
@@ -177,6 +191,18 @@ namespace TelegramWin.ViewModels
                 Interlocked.Exchange(ref _isLoadingOlderFlag, 0);
                 _olderGate.Release();
             }
+        }
+
+        private async Task EnsureChatOpenedAsync()
+        {
+            try { await _td.ExecuteAsync(new TdApi.OpenChat { ChatId = _chatId }); }
+            catch { }
+        }
+
+        public async Task CloseChatAsync()
+        {
+            try { await _td.ExecuteAsync(new TdApi.CloseChat { ChatId = _chatId }); }
+            catch { }
         }
 
         private async Task<MessageDisplayItem> BuildDisplayItemAsync(TdApi.Message m)
@@ -195,6 +221,8 @@ namespace TelegramWin.ViewModels
         {
             try
             {
+                if (_disposed) return;
+
                 if (!string.Equals(update.GetType().Name, "UpdateNewMessage", StringComparison.Ordinal))
                     return;
 
@@ -220,7 +248,12 @@ namespace TelegramWin.ViewModels
                     try
                     {
                         var item = await BuildDisplayItemAsync(msg);
-                        _ui.Post(_ => Messages.Add(item), null);
+
+                        _ui.Post(_ =>
+                        {
+                            Messages.Add(item);
+                            try { NewMessageArrived?.Invoke(item); } catch { }
+                        }, null);
                     }
                     catch { }
                 });
@@ -252,6 +285,19 @@ namespace TelegramWin.ViewModels
             }
 
             return "";
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            _td.UpdateReceivedPublic -= OnUpdate;
+
+            _ = Task.Run(async () =>
+            {
+                try { await CloseChatAsync(); } catch { }
+            });
         }
 
         private void OnPropertyChanged([CallerMemberName] string? name = null)

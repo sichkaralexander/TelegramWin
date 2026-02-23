@@ -13,7 +13,17 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"/>
-            <!-- Скрываем статус, чтобы JAWS не говорил "Чат ID ..." при открытии -->
+
+            <!-- Live region для JAWS: озвучка новых сообщений, НЕ попадает в фокус -->
+            <TextBlock x:Name="LiveStatus"
+                       Opacity="0.01"
+                       Height="1"
+                       Focusable="False"
+                       IsHitTestVisible="False"
+                       AutomationProperties.LiveSetting="Assertive"
+                       AutomationProperties.Name=""/>
+
+            <!-- Скрываем статус, чтобы JAWS не говорил лишнее при открытии -->
             <TextBlock Text="{Binding Status}"
                        Visibility="Collapsed"
                        Focusable="False"
@@ -26,16 +36,19 @@
                  ItemsSource="{Binding Messages}"
                  SelectedItem="{Binding SelectedMessage, Mode=TwoWay}"
                  KeyboardNavigation.DirectionalNavigation="Contained"
+                 ScrollViewer.CanContentScroll="True"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
                  AutomationProperties.Name="">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <StackPanel Margin="0,6,0,6">
-                        <TextBlock x:Name="MessageText"
-                                   Text="{Binding Text}"
+                        <TextBlock Text="{Binding Text}"
                                    TextWrapping="Wrap"
-                                   Focusable="True"
-                                   AutomationProperties.Name="{Binding Text}"/>
-                        <TextBlock Text="{Binding Meta}" Opacity="0.8" Margin="0,2,0,0" />
+                                   Focusable="False"
+                                   IsHitTestVisible="False"/>
+                        <TextBlock Text="{Binding Meta}" Opacity="0.8" Margin="0,2,0,0"
+                                   Focusable="False"
+                                   IsHitTestVisible="False"/>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>

@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -13,9 +15,13 @@ namespace TelegramWin.Views
     public partial class MessagesWindow : Window
     {
         private readonly MessagesShellViewModel _vm;
+
         private bool _initialFocusDone;
 
         private ScrollViewer? _scroll;
+
+        private bool _stickToBottom = true;
+        private bool _programmaticScroll;
 
         public MessagesWindow(TdLibService td, long chatId, string title)
         {
@@ -24,16 +30,17 @@ namespace TelegramWin.Views
             _vm = new MessagesShellViewModel(td, chatId, title);
             DataContext = _vm;
 
+            _vm.Messages.CollectionChanged += Messages_CollectionChanged;
+            _vm.NewMessageArrived += Vm_NewMessageArrived;
+
             Loaded += async (_, __) =>
             {
                 await _vm.LoadLatestMessagesAsync(80);
 
-                // Подключаем ScrollViewer после того как визуальное дерево есть
                 _scroll = FindVisualChild<ScrollViewer>(MessagesList);
                 if (_scroll != null)
                     _scroll.ScrollChanged += Scroll_ScrollChanged;
 
-                // Фокус на последний элемент — с ретраями
                 BeginInitialFocus();
             };
 
@@ -42,6 +49,59 @@ namespace TelegramWin.Views
                 if (!_initialFocusDone)
                     BeginInitialFocus();
             };
+
+            Closed += (_, __) =>
+            {
+                try { _vm.Messages.CollectionChanged -= Messages_CollectionChanged; } catch { }
+                try { _vm.NewMessageArrived -= Vm_NewMessageArrived; } catch { }
+                _vm.Dispose();
+            };
+        }
+
+        private void Vm_NewMessageArrived(MessageDisplayItem item)
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try
+                {
+                    var announcement = string.IsNullOrWhiteSpace(item.Meta)
+                        ? item.Text
+                        : $"{item.Text}. {item.Meta}";
+
+                    AutomationProperties.SetName(LiveStatus, announcement);
+                    LiveStatus.Text = announcement;
+                }
+                catch { }
+            }));
+        }
+
+        private void Messages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (!_stickToBottom)
+                return;
+
+            if (_vm.Messages.Count == 0)
+                return;
+
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try
+                {
+                    var last = _vm.Messages.Last();
+                    _vm.SelectedMessage = last;
+                    MessagesList.SelectedItem = last;
+
+                    _programmaticScroll = true;
+                    MessagesList.UpdateLayout();
+                    MessagesList.ScrollIntoView(last);
+                    MessagesList.UpdateLayout();
+                }
+                catch { }
+                finally
+                {
+                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
+                }
+            }));
         }
 
         private async void Scroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -49,23 +109,32 @@ namespace TelegramWin.Views
             if (_scroll == null)
                 return;
 
-            // Дошли до самого верха -> дозагрузить ещё 30 старых сообщений
-            // Используем небольшой порог, чтобы срабатывало стабильно
+            if (!_programmaticScroll)
+            {
+                double bottomThreshold = 2.0;
+                bool atBottom = _scroll.VerticalOffset >= (_scroll.ScrollableHeight - bottomThreshold);
+                _stickToBottom = atBottom;
+            }
+
             if (_scroll.VerticalOffset <= 0.0 && _vm.CanLoadOlder)
             {
-                // Сохраняем позицию, чтобы после вставки сверху "не прыгало"
+                _stickToBottom = false;
+
                 double oldExtent = _scroll.ExtentHeight;
                 double oldOffset = _scroll.VerticalOffset;
 
                 await _vm.LoadOlderMessagesAsync(30);
 
-                // Ждём перерасчёт размеров и восстанавливаем позицию
                 Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
                 {
                     if (_scroll == null) return;
+
                     double newExtent = _scroll.ExtentHeight;
                     double delta = newExtent - oldExtent;
+
+                    _programmaticScroll = true;
                     _scroll.ScrollToVerticalOffset(oldOffset + delta);
+                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
                 }));
             }
         }
@@ -92,11 +161,16 @@ namespace TelegramWin.Views
 
             try
             {
+                _programmaticScroll = true;
                 MessagesList.UpdateLayout();
                 MessagesList.ScrollIntoView(last);
                 MessagesList.UpdateLayout();
             }
             catch { }
+            finally
+            {
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
+            }
 
             if (MessagesList.ItemContainerGenerator.ContainerFromItem(last) is FrameworkElement container)
             {
@@ -106,6 +180,7 @@ namespace TelegramWin.Views
                     Keyboard.Focus(container);
                     container.Focus();
                     _initialFocusDone = true;
+                    _stickToBottom = true;
                     return;
                 }
                 catch { }
@@ -121,6 +196,7 @@ namespace TelegramWin.Views
                 }
                 catch { }
                 _initialFocusDone = true;
+                _stickToBottom = true;
                 return;
             }
 
