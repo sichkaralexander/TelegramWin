@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Media;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -19,9 +19,10 @@ namespace TelegramWin.Views
         private bool _initialFocusDone;
 
         private ScrollViewer? _scroll;
-
         private bool _stickToBottom = true;
         private bool _programmaticScroll;
+
+        private DateTime _lastNotifyUtc = DateTime.MinValue;
 
         public MessagesWindow(TdLibService td, long chatId, string title)
         {
@@ -30,8 +31,8 @@ namespace TelegramWin.Views
             _vm = new MessagesShellViewModel(td, chatId, title);
             DataContext = _vm;
 
-            _vm.Messages.CollectionChanged += Messages_CollectionChanged;
             _vm.NewMessageArrived += Vm_NewMessageArrived;
+            _vm.Messages.CollectionChanged += Messages_CollectionChanged;
 
             Loaded += async (_, __) =>
             {
@@ -52,35 +53,39 @@ namespace TelegramWin.Views
 
             Closed += (_, __) =>
             {
-                try { _vm.Messages.CollectionChanged -= Messages_CollectionChanged; } catch { }
                 try { _vm.NewMessageArrived -= Vm_NewMessageArrived; } catch { }
-                _vm.Dispose();
+                try { _vm.Messages.CollectionChanged -= Messages_CollectionChanged; } catch { }
+                try { _vm.Dispose(); } catch { }
             };
         }
 
-        private void Vm_NewMessageArrived(MessageDisplayItem item)
+        private void Vm_NewMessageArrived(MessageDisplayItem _)
         {
+            // Надёжное уведомление: короткий "дзынь" только когда окно активно.
+            if (!IsActive)
+                return;
+
+            var now = DateTime.UtcNow;
+            if ((now - _lastNotifyUtc).TotalMilliseconds < 900)
+                return;
+
+            _lastNotifyUtc = now;
+
             Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
             {
-                try
-                {
-                    var announcement = string.IsNullOrWhiteSpace(item.Meta)
-                        ? item.Text
-                        : $"{item.Text}. {item.Meta}";
-
-                    AutomationProperties.SetName(LiveStatus, announcement);
-                    LiveStatus.Text = announcement;
-                }
-                catch { }
+                try { SystemSounds.Asterisk.Play(); } catch { }
             }));
         }
 
         private void Messages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            if (!_stickToBottom)
+            // ВАЖНО ДЛЯ JAWS: НЕ меняем SelectedItem/фокус при новых сообщениях,
+            // иначе он начинает читать "предыдущее".
+            if (_vm.Messages.Count == 0)
                 return;
 
-            if (_vm.Messages.Count == 0)
+            bool shouldStick = _stickToBottom || _scroll == null;
+            if (!shouldStick)
                 return;
 
             Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
@@ -88,12 +93,17 @@ namespace TelegramWin.Views
                 try
                 {
                     var last = _vm.Messages.Last();
-                    _vm.SelectedMessage = last;
-                    MessagesList.SelectedItem = last;
 
                     _programmaticScroll = true;
+
                     MessagesList.UpdateLayout();
-                    MessagesList.ScrollIntoView(last);
+                    _scroll ??= FindVisualChild<ScrollViewer>(MessagesList);
+
+                    if (_scroll != null)
+                        _scroll.ScrollToEnd();
+                    else
+                        MessagesList.ScrollIntoView(last);
+
                     MessagesList.UpdateLayout();
                 }
                 catch { }
@@ -116,6 +126,7 @@ namespace TelegramWin.Views
                 _stickToBottom = atBottom;
             }
 
+            // Дошли до самого верха -> подгружаем ещё 30 старых сообщений
             if (_scroll.VerticalOffset <= 0.0 && _vm.CanLoadOlder)
             {
                 _stickToBottom = false;

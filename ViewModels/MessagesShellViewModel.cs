@@ -26,6 +26,7 @@ namespace TelegramWin.ViewModels
         private readonly HashSet<long> _loadedMessageIds = new();
         private long _oldestMessageIdLoaded;
         private bool _hasMoreOlder = true;
+
         private int _isLoadingOlderFlag = 0;
         private readonly SemaphoreSlim _olderGate = new(1, 1);
 
@@ -35,6 +36,7 @@ namespace TelegramWin.ViewModels
 
         public ObservableCollection<MessageDisplayItem> Messages { get; } = new();
 
+        // Событие для окна (уведомление о новом сообщении, без обязательной смены фокуса)
         public event Action<MessageDisplayItem>? NewMessageArrived;
 
         public string Title
@@ -66,6 +68,7 @@ namespace TelegramWin.ViewModels
 
             _ui = SynchronizationContext.Current ?? new SynchronizationContext();
 
+            // Подписка на апдейты TDLib (живые сообщения)
             _td.UpdateReceivedPublic += OnUpdate;
         }
 
@@ -81,6 +84,7 @@ namespace TelegramWin.ViewModels
 
             TdApi.Messages? history = null;
 
+            // Иногда TDLib отдаёт 1 сообщение при первом запросе — делаем несколько попыток
             for (int attempt = 0; attempt < 5; attempt++)
             {
                 history = await _td.ExecuteAsync(new TdApi.GetChatHistory
@@ -106,6 +110,7 @@ namespace TelegramWin.ViewModels
                 return;
             }
 
+            // TDLib даёт от новых к старым, разворачиваем, чтобы было "старые сверху, новые снизу"
             Array.Reverse(history.Messages_);
 
             var prepared = new List<MessageDisplayItem>(history.Messages_.Length);
@@ -182,6 +187,7 @@ namespace TelegramWin.ViewModels
 
                 _ui.Post(_ =>
                 {
+                    // вставляем сверху, сохраняя порядок
                     for (int i = prepared.Count - 1; i >= 0; i--)
                         Messages.Insert(0, prepared[i]);
                 }, null);
@@ -196,12 +202,6 @@ namespace TelegramWin.ViewModels
         private async Task EnsureChatOpenedAsync()
         {
             try { await _td.ExecuteAsync(new TdApi.OpenChat { ChatId = _chatId }); }
-            catch { }
-        }
-
-        public async Task CloseChatAsync()
-        {
-            try { await _td.ExecuteAsync(new TdApi.CloseChat { ChatId = _chatId }); }
             catch { }
         }
 
@@ -223,6 +223,7 @@ namespace TelegramWin.ViewModels
             {
                 if (_disposed) return;
 
+                // У разных версий TDLib.Api тип может отличаться, поэтому берём по имени
                 if (!string.Equals(update.GetType().Name, "UpdateNewMessage", StringComparison.Ordinal))
                     return;
 
@@ -263,8 +264,19 @@ namespace TelegramWin.ViewModels
 
         private string ExtractText(TdApi.Message m)
         {
-            var s = MessagePreviewFormatter.FromMessage(m);
-            return string.IsNullOrWhiteSpace(s) ? "(пусто)" : s;
+            if (m.Content is TdApi.MessageContent.MessageText mt)
+                return mt.Text?.Text ?? "(пусто)";
+
+            if (m.Content is TdApi.MessageContent.MessagePhoto mp)
+                return string.IsNullOrWhiteSpace(mp.Caption?.Text) ? "[Фото]" : "[Фото] " + mp.Caption.Text;
+
+            if (m.Content is TdApi.MessageContent.MessageVideo mv)
+                return string.IsNullOrWhiteSpace(mv.Caption?.Text) ? "[Видео]" : "[Видео] " + mv.Caption.Text;
+
+            if (m.Content is TdApi.MessageContent.MessageDocument md)
+                return string.IsNullOrWhiteSpace(md.Caption?.Text) ? "[Файл]" : "[Файл] " + md.Caption.Text;
+
+            return "[Сообщение]";
         }
 
         private async Task<string> ResolveAuthor(TdApi.MessageSender sender)
@@ -296,7 +308,7 @@ namespace TelegramWin.ViewModels
 
             _ = Task.Run(async () =>
             {
-                try { await CloseChatAsync(); } catch { }
+                try { await _td.ExecuteAsync(new TdApi.CloseChat { ChatId = _chatId }); } catch { }
             });
         }
 
