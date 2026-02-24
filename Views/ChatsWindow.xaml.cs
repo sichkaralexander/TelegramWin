@@ -1,7 +1,9 @@
 using System;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using TelegramWin.Services;
 using TelegramWin.ViewModels;
 
@@ -27,57 +29,112 @@ namespace TelegramWin.Views
             };
         }
 
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter)
+                return;
+
+            if (!IsFocusInside(ChatsList))
+                return;
+
+            e.Handled = true;
+            OpenSelectedChat_Debug();
+        }
+
+        private static bool IsFocusInside(DependencyObject root)
+        {
+            try
+            {
+                var focused = Keyboard.FocusedElement as DependencyObject;
+                if (focused == null) return false;
+
+                var cur = focused;
+                while (cur != null)
+                {
+                    if (ReferenceEquals(cur, root))
+                        return true;
+
+                    if (cur is Visual || cur is System.Windows.Media.Media3D.Visual3D)
+                        cur = VisualTreeHelper.GetParent(cur);
+                    else
+                        cur = LogicalTreeHelper.GetParent(cur);
+                }
+
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private void ChatsList_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
                 e.Handled = true;
-                OpenSelectedChat();
+                OpenSelectedChat_Debug();
             }
         }
 
         private void ChatsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            OpenSelectedChat();
+            OpenSelectedChat_Debug();
         }
 
-        private void OpenSelectedChat()
+        private void OpenSelectedChat_Debug()
         {
-            var item = ChatsList.SelectedItem;
-            if (item == null)
-                return;
-
-            // Запоминаем текущее выделение, чтобы после закрытия MessagesWindow
-            // фокус/выделение НЕ прыгали на первый чат.
-            int selectedIndex = ChatsList.SelectedIndex;
-
-            long chatId = TryGetLong(item, "ChatId", "Id", "chat_id", "Chat_id");
-            string title = TryGetString(item, "Title", "Name", "ChatTitle", "DisplayTitle") ?? "Чат";
-            if (chatId == 0)
-                title = $"{title} (chatId не найден)";
-
-            var w = new MessagesWindow(_td, chatId, title)
+            try
             {
-                Owner = this
-            };
+                var item = ChatsList.SelectedItem;
 
-            w.Closed += (_, __) =>
-            {
-                try
+                if (item == null)
                 {
-                    Activate();
-                    ChatsList.Focus();
-                    if (selectedIndex >= 0 && selectedIndex < ChatsList.Items.Count)
-                    {
-                        ChatsList.SelectedIndex = selectedIndex;
-                        ChatsList.ScrollIntoView(ChatsList.SelectedItem);
-                    }
+                    MessageBox.Show("SelectedItem = null. Выдели чат стрелками и попробуй Enter.", "DEBUG",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
                 }
-                catch { }
-            };
 
-            w.Show();
-            w.Activate();
+                int selectedIndex = ChatsList.SelectedIndex;
+
+                long chatId = TryGetLong(item, "ChatId", "Id", "chat_id", "Chat_id");
+                string title = TryGetString(item, "Title", "Name", "ChatTitle", "DisplayTitle") ?? "Чат";
+
+                if (chatId == 0)
+                {
+                    MessageBox.Show("chatId = 0 (не удалось получить Id чата из объекта). Сообщи мне этот текст.",
+                        "DEBUG", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var w = new MessagesWindow(_td, chatId, title)
+                {
+                    Owner = this
+                };
+
+                w.Closed += (_, __) =>
+                {
+                    try
+                    {
+                        Activate();
+                        ChatsList.Focus();
+                        if (selectedIndex >= 0 && selectedIndex < ChatsList.Items.Count)
+                        {
+                            ChatsList.SelectedIndex = selectedIndex;
+                            ChatsList.ScrollIntoView(ChatsList.SelectedItem);
+                        }
+                    }
+                    catch { }
+                };
+
+                w.Show();
+                w.Activate();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("OpenSelectedChat exception:\r\n" + ex, "DEBUG",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private static long TryGetLong(object obj, params string[] names)

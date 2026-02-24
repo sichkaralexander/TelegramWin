@@ -5,58 +5,76 @@
         Height="560" Width="760"
         WindowStartupLocation="CenterOwner"
         PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="0,0,0,12">
-            <TextBlock Text="{Binding Title}" FontSize="18" FontWeight="SemiBold"/>
-
-            <!-- Live region для JAWS: озвучка новых сообщений, НЕ попадает в фокус -->
-            <TextBlock x:Name="LiveStatus"
-                       Opacity="0.01"
-                       Height="1"
-                       Focusable="False"
-                       IsHitTestVisible="False"
-                       AutomationProperties.LiveSetting="Assertive"
-                       AutomationProperties.Name=""/>
-
-            <!-- Скрываем статус, чтобы JAWS не говорил лишнее при открытии -->
-            <TextBlock Text="{Binding Status}"
-                       Visibility="Collapsed"
-                       Focusable="False"
-                       IsHitTestVisible="False"
-                       AutomationProperties.Name=""/>
-        </StackPanel>
+        <TextBlock Grid.Row="0"
+                   Text="{Binding Title}"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Margin="0,0,0,12"/>
 
         <ListBox x:Name="MessagesList"
                  Grid.Row="1"
                  ItemsSource="{Binding Messages}"
                  SelectedItem="{Binding SelectedMessage, Mode=TwoWay}"
-                 KeyboardNavigation.DirectionalNavigation="Contained"
-                 ScrollViewer.CanContentScroll="True"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                 AutomationProperties.Name="">
+                 AutomationProperties.Name="Сообщения">
+
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="AutomationProperties.Name"
+                            Value="{Binding AccessibleText}"/>
+                </Style>
+            </ListBox.ItemContainerStyle>
+
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Margin="0,6,0,6">
+                    <StackPanel Margin="6">
                         <TextBlock Text="{Binding Text}"
-                                   TextWrapping="Wrap"
-                                   Focusable="False"
-                                   IsHitTestVisible="False"/>
-                        <TextBlock Text="{Binding Meta}" Opacity="0.8" Margin="0,2,0,0"
-                                   Focusable="False"
-                                   IsHitTestVisible="False"/>
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Meta}"
+                                   Opacity="0.7"
+                                   FontSize="12"/>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>
-            <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem">
-                    <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleText}"/>
-                </Style>
-            </ListBox.ItemContainerStyle>
+
         </ListBox>
+
+        <Border Grid.Row="2"
+                Margin="0,12,0,0"
+                Padding="10"
+                BorderBrush="#CCC"
+                BorderThickness="1"
+                Visibility="{Binding IsComposerVisible, Converter={StaticResource BoolToVis}}">
+
+            <StackPanel>
+                <DockPanel Margin="0,0,0,6"
+                           Visibility="{Binding IsReplyMode, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding ReplyAutomationName}"
+                               Margin="0,0,8,0"/>
+                    <Button Content="Отменить"
+                            Click="CancelReply_Click"/>
+                </DockPanel>
+
+                <TextBox x:Name="ComposerBox"
+                         Text="{Binding ComposerText, Mode=TwoWay}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="60"
+                         PreviewKeyDown="ComposerBox_PreviewKeyDown"/>
+            </StackPanel>
+        </Border>
+
     </Grid>
 </Window>

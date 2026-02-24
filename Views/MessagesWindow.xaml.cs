@@ -34,6 +34,9 @@ namespace TelegramWin.Views
             _vm.NewMessageArrived += Vm_NewMessageArrived;
             _vm.Messages.CollectionChanged += Messages_CollectionChanged;
 
+            // Контекстное меню создаём программно на ListBoxItem
+            MessagesList.ContextMenuOpening += MessagesList_ContextMenuOpening;
+
             Loaded += async (_, __) =>
             {
                 await _vm.LoadLatestMessagesAsync(80);
@@ -53,15 +56,46 @@ namespace TelegramWin.Views
 
             Closed += (_, __) =>
             {
+                try { MessagesList.ContextMenuOpening -= MessagesList_ContextMenuOpening; } catch { }
                 try { _vm.NewMessageArrived -= Vm_NewMessageArrived; } catch { }
                 try { _vm.Messages.CollectionChanged -= Messages_CollectionChanged; } catch { }
                 try { _vm.Dispose(); } catch { }
             };
         }
 
+        private void MessagesList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        {
+            try
+            {
+                // Контекстное меню должно быть для текущего выделенного сообщения
+                var msg = MessagesList.SelectedItem as MessageDisplayItem;
+                if (msg == null)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                var cm = new ContextMenu();
+
+                var miReply = new MenuItem { Header = "Ответить на сообщение", Tag = msg };
+                miReply.Click += ReplyToMessage_Click;
+
+                var miWrite = new MenuItem { Header = "Написать в чат", Tag = msg };
+                miWrite.Click += WriteToChat_Click;
+
+                cm.Items.Add(miReply);
+                cm.Items.Add(miWrite);
+
+                MessagesList.ContextMenu = cm;
+            }
+            catch
+            {
+                e.Handled = true;
+            }
+        }
+
         private void Vm_NewMessageArrived(MessageDisplayItem _)
         {
-            // Надёжное уведомление: короткий "дзынь" только когда окно активно.
             if (!IsActive)
                 return;
 
@@ -79,8 +113,6 @@ namespace TelegramWin.Views
 
         private void Messages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            // ВАЖНО ДЛЯ JAWS: НЕ меняем SelectedItem/фокус при новых сообщениях,
-            // иначе он начинает читать "предыдущее".
             if (_vm.Messages.Count == 0)
                 return;
 
@@ -126,7 +158,6 @@ namespace TelegramWin.Views
                 _stickToBottom = atBottom;
             }
 
-            // Дошли до самого верха -> подгружаем ещё 30 старых сообщений
             if (_scroll.VerticalOffset <= 0.0 && _vm.CanLoadOlder)
             {
                 _stickToBottom = false;
@@ -241,10 +272,100 @@ namespace TelegramWin.Views
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Escape)
+            if (e.Key == Key.Escape && !_vm.IsComposerVisible)
             {
                 e.Handled = true;
                 Close();
+            }
+        }
+
+        private MessageDisplayItem? GetTagMessage(object sender)
+        {
+            try
+            {
+                if (sender is MenuItem mi)
+                    return mi.Tag as MessageDisplayItem;
+            }
+            catch { }
+            return null;
+        }
+
+        private void WriteToChat_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.StartCompose();
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
+            }));
+        }
+
+        private void ReplyToMessage_Click(object sender, RoutedEventArgs e)
+        {
+            var msg = GetTagMessage(sender) ?? (MessagesList.SelectedItem as MessageDisplayItem);
+            _vm.StartReply(msg);
+
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
+            }));
+        }
+
+        private void CancelReply_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.CancelReply();
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
+            }));
+        }
+
+        private async void ComposerBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+            {
+                e.Handled = true;
+                _stickToBottom = true;
+
+                bool ok = false;
+                try { ok = await _vm.SendCurrentAsync(); } catch { ok = false; }
+
+                if (ok)
+                {
+                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                    {
+                        try
+                        {
+                            _programmaticScroll = true;
+                            MessagesList.UpdateLayout();
+                            _scroll ??= FindVisualChild<ScrollViewer>(MessagesList);
+                            _scroll?.ScrollToEnd();
+                        }
+                        catch { }
+                        finally
+                        {
+                            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
+                        }
+                    }));
+                }
+                return;
+            }
+
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+
+                if (_vm.IsReplyMode)
+                {
+                    _vm.CancelReply();
+                    return;
+                }
+
+                _vm.HideComposer();
+
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+                {
+                    try { Keyboard.Focus(MessagesList); MessagesList.Focus(); } catch { }
+                }));
             }
         }
     }

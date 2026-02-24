@@ -32,6 +32,13 @@ namespace TelegramWin.ViewModels
 
         private bool _disposed;
 
+        // ===== Composer state (ввод/ответ) =====
+        private bool _isComposerVisible;
+        private bool _isReplyMode;
+        private long _replyToMessageId;
+        private string _replyPreviewText = "";
+        private string _composerText = "";
+
         public event PropertyChangedEventHandler? PropertyChanged;
 
         public ObservableCollection<MessageDisplayItem> Messages { get; } = new();
@@ -60,6 +67,41 @@ namespace TelegramWin.ViewModels
         public bool IsLoadingOlder => Volatile.Read(ref _isLoadingOlderFlag) == 1;
         public bool CanLoadOlder => _hasMoreOlder && !IsLoadingOlder && _oldestMessageIdLoaded != 0;
 
+        // ===== Composer bindings =====
+        public bool IsComposerVisible
+        {
+            get => _isComposerVisible;
+            set { _isComposerVisible = value; OnPropertyChanged(); }
+        }
+
+        public bool IsReplyMode
+        {
+            get => _isReplyMode;
+            set { _isReplyMode = value; OnPropertyChanged(); OnPropertyChanged(nameof(ReplyAutomationName)); }
+        }
+
+        public long ReplyToMessageId
+        {
+            get => _replyToMessageId;
+            set { _replyToMessageId = value; OnPropertyChanged(); }
+        }
+
+        public string ReplyPreviewText
+        {
+            get => _replyPreviewText;
+            set { _replyPreviewText = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(ReplyAutomationName)); }
+        }
+
+        public string ReplyAutomationName => IsReplyMode
+            ? ("Ответ на сообщение: " + (ReplyPreviewText ?? ""))
+            : "";
+
+        public string ComposerText
+        {
+            get => _composerText;
+            set { _composerText = value ?? ""; OnPropertyChanged(); }
+        }
+
         public MessagesShellViewModel(TdLibService td, long chatId, string title)
         {
             _td = td;
@@ -70,6 +112,164 @@ namespace TelegramWin.ViewModels
 
             // Подписка на апдейты TDLib (живые сообщения)
             _td.UpdateReceivedPublic += OnUpdate;
+        }
+
+        public void StartCompose()
+        {
+            IsComposerVisible = true;
+            IsReplyMode = false;
+            ReplyToMessageId = 0;
+            ReplyPreviewText = "";
+        }
+
+        public void StartReply(MessageDisplayItem? message)
+        {
+            if (message == null)
+            {
+                StartCompose();
+                return;
+            }
+
+            IsComposerVisible = true;
+            IsReplyMode = true;
+            ReplyToMessageId = message.Id;
+            ReplyPreviewText = (message.Text ?? "").Trim();
+            if (ReplyPreviewText.Length > 180)
+                ReplyPreviewText = ReplyPreviewText.Substring(0, 180) + "…";
+        }
+
+        public void CancelReply()
+        {
+            IsReplyMode = false;
+            ReplyToMessageId = 0;
+            ReplyPreviewText = "";
+        }
+
+        public void HideComposer()
+        {
+            IsComposerVisible = false;
+            CancelReply();
+        }
+
+        public async Task<bool> SendCurrentAsync()
+        {
+            var text = (ComposerText ?? "").TrimEnd();
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            await EnsureChatOpenedAsync();
+
+            var send = new TdApi.SendMessage
+            {
+                ChatId = _chatId,
+                InputMessageContent = new TdApi.InputMessageContent.InputMessageText
+                {
+                    Text = new TdApi.FormattedText { Text = text }
+                }
+            };
+
+            if (IsReplyMode && ReplyToMessageId != 0)
+                TrySetReplyOnSendMessage(send, ReplyToMessageId);
+
+            try
+            {
+                await _td.ExecuteAsync(send);
+            }
+            catch
+            {
+                return false;
+            }
+
+            ComposerText = "";
+
+            if (IsReplyMode)
+                CancelReply();
+
+            return true;
+        }
+
+        private static void TrySetReplyOnSendMessage(TdApi.SendMessage send, long replyToMessageId)
+        {
+            if (send == null || replyToMessageId == 0) return;
+
+            var p1 = send.GetType().GetProperty("ReplyToMessageId", BindingFlags.Public | BindingFlags.Instance);
+            if (p1 != null && p1.CanWrite && p1.PropertyType == typeof(long))
+            {
+                p1.SetValue(send, replyToMessageId);
+                return;
+            }
+
+            var p2 = send.GetType().GetProperty("ReplyTo", BindingFlags.Public | BindingFlags.Instance);
+            if (p2 != null && p2.CanWrite)
+            {
+                var replyObj = CreateInputMessageReplyToMessage(replyToMessageId);
+                if (replyObj != null)
+                {
+                    p2.SetValue(send, replyObj);
+                    return;
+                }
+            }
+
+            var p3 = send.GetType().GetProperty("ReplyToMessage", BindingFlags.Public | BindingFlags.Instance);
+            if (p3 != null && p3.CanWrite)
+            {
+                var replyObj = CreateInputMessageReplyToMessage(replyToMessageId);
+                if (replyObj != null)
+                {
+                    p3.SetValue(send, replyObj);
+                    return;
+                }
+            }
+        }
+
+        private static object? CreateInputMessageReplyToMessage(long replyToMessageId)
+        {
+            try
+            {
+                var asm = typeof(TdApi).Assembly;
+
+                Type? t = null;
+
+                foreach (var tt in asm.GetTypes())
+                {
+                    var n = tt.Name ?? "";
+                    if (n.IndexOf("ReplyTo", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        n.IndexOf("Message", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (tt.IsClass && !tt.IsAbstract)
+                        {
+                            t = tt;
+                            if (tt.GetProperty("MessageId") != null || tt.GetProperty("ReplyToMessageId") != null)
+                                break;
+                        }
+                    }
+                }
+
+                if (t == null) return null;
+
+                var obj = Activator.CreateInstance(t);
+                if (obj == null) return null;
+
+                var pMsgId = t.GetProperty("MessageId", BindingFlags.Public | BindingFlags.Instance);
+                if (pMsgId != null && pMsgId.CanWrite && pMsgId.PropertyType == typeof(long))
+                {
+                    pMsgId.SetValue(obj, replyToMessageId);
+                    return obj;
+                }
+
+                var pReplyId = t.GetProperty("ReplyToMessageId", BindingFlags.Public | BindingFlags.Instance);
+                if (pReplyId != null && pReplyId.CanWrite && pReplyId.PropertyType == typeof(long))
+                {
+                    pReplyId.SetValue(obj, replyToMessageId);
+                    return obj;
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         public async Task LoadLatestMessagesAsync(int limit)
@@ -84,7 +284,6 @@ namespace TelegramWin.ViewModels
 
             TdApi.Messages? history = null;
 
-            // Иногда TDLib отдаёт 1 сообщение при первом запросе — делаем несколько попыток
             for (int attempt = 0; attempt < 5; attempt++)
             {
                 history = await _td.ExecuteAsync(new TdApi.GetChatHistory
@@ -110,7 +309,6 @@ namespace TelegramWin.ViewModels
                 return;
             }
 
-            // TDLib даёт от новых к старым, разворачиваем, чтобы было "старые сверху, новые снизу"
             Array.Reverse(history.Messages_);
 
             var prepared = new List<MessageDisplayItem>(history.Messages_.Length);
@@ -187,7 +385,6 @@ namespace TelegramWin.ViewModels
 
                 _ui.Post(_ =>
                 {
-                    // вставляем сверху, сохраняя порядок
                     for (int i = prepared.Count - 1; i >= 0; i--)
                         Messages.Insert(0, prepared[i]);
                 }, null);
@@ -212,8 +409,9 @@ namespace TelegramWin.ViewModels
             string author = await ResolveAuthor(m.SenderId);
 
             return new MessageDisplayItem(
-                text,
-                $"{author} {dt:dd.MM.yyyy HH:mm}"
+                id: m.Id,
+                text: text,
+                meta: $"{author} {dt:dd.MM.yyyy HH:mm}"
             );
         }
 
@@ -223,7 +421,6 @@ namespace TelegramWin.ViewModels
             {
                 if (_disposed) return;
 
-                // У разных версий TDLib.Api тип может отличаться, поэтому берём по имени
                 if (!string.Equals(update.GetType().Name, "UpdateNewMessage", StringComparison.Ordinal))
                     return;
 
