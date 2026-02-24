@@ -34,21 +34,50 @@
                 <Style TargetType="ListBoxItem">
                     <Setter Property="AutomationProperties.Name"
                             Value="{Binding AccessibleText}"/>
+
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border Padding="6"
+                                        Background="{TemplateBinding Background}">
+                                    <StackPanel>
+                                        <ContentPresenter/>
+                                        <StackPanel x:Name="ActionPanel"
+                                                    Orientation="Horizontal"
+                                                    Margin="0,6,0,0"
+                                                    Visibility="Collapsed">
+                                            <Button Content="Ответить"
+                                                    Tag="{Binding}"
+                                                    Margin="0,0,8,0"
+                                                    Click="ReplyButton_Click"/>
+                                            <Button Content="Написать"
+                                                    Tag="{Binding}"
+                                                    Click="WriteButton_Click"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="ActionPanel"
+                                                Property="Visibility"
+                                                Value="Visible"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
             </ListBox.ItemContainerStyle>
 
             <ListBox.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Margin="6">
-                        <TextBlock Text="{Binding Text}"
-                                   TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding Meta}"
-                                   Opacity="0.7"
-                                   FontSize="12"/>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Meta}" Opacity="0.7" FontSize="12"/>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>
-
         </ListBox>
 
         <Border Grid.Row="2"
@@ -62,7 +91,9 @@
                 <DockPanel Margin="0,0,0,6"
                            Visibility="{Binding IsReplyMode, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding ReplyAutomationName}"
-                               Margin="0,0,8,0"/>
+                               Margin="0,0,8,0"
+                               TextWrapping="Wrap"
+                               AutomationProperties.Name="{Binding ReplyAutomationName}"/>
                     <Button Content="Отменить"
                             Click="CancelReply_Click"/>
                 </DockPanel>
@@ -72,6 +103,7 @@
                          AcceptsReturn="True"
                          TextWrapping="Wrap"
                          MinHeight="60"
+                         AutomationProperties.Name="{Binding ComposerAutomationName}"
                          PreviewKeyDown="ComposerBox_PreviewKeyDown"/>
             </StackPanel>
         </Border>

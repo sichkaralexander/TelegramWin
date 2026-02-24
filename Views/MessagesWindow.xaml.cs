@@ -34,9 +34,6 @@ namespace TelegramWin.Views
             _vm.NewMessageArrived += Vm_NewMessageArrived;
             _vm.Messages.CollectionChanged += Messages_CollectionChanged;
 
-            // Контекстное меню создаём программно на ListBoxItem
-            MessagesList.ContextMenuOpening += MessagesList_ContextMenuOpening;
-
             Loaded += async (_, __) =>
             {
                 await _vm.LoadLatestMessagesAsync(80);
@@ -56,53 +53,45 @@ namespace TelegramWin.Views
 
             Closed += (_, __) =>
             {
-                try { MessagesList.ContextMenuOpening -= MessagesList_ContextMenuOpening; } catch { }
                 try { _vm.NewMessageArrived -= Vm_NewMessageArrived; } catch { }
                 try { _vm.Messages.CollectionChanged -= Messages_CollectionChanged; } catch { }
                 try { _vm.Dispose(); } catch { }
             };
         }
 
-        private void MessagesList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        private void ReplyButton_Click(object sender, RoutedEventArgs e)
         {
-            try
+            var msg = (sender as FrameworkElement)?.Tag as MessageDisplayItem;
+            _vm.StartReply(msg);
+            FocusComposer();
+        }
+
+        private void WriteButton_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.StartCompose();
+            FocusComposer();
+        }
+
+        private void CancelReply_Click(object sender, RoutedEventArgs e)
+        {
+            _vm.CancelReply();
+            FocusComposer();
+        }
+
+        private void FocusComposer()
+        {
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
             {
-                // Контекстное меню должно быть для текущего выделенного сообщения
-                var msg = MessagesList.SelectedItem as MessageDisplayItem;
-                if (msg == null)
-                {
-                    e.Handled = true;
-                    return;
-                }
-
-                var cm = new ContextMenu();
-
-                var miReply = new MenuItem { Header = "Ответить на сообщение", Tag = msg };
-                miReply.Click += ReplyToMessage_Click;
-
-                var miWrite = new MenuItem { Header = "Написать в чат", Tag = msg };
-                miWrite.Click += WriteToChat_Click;
-
-                cm.Items.Add(miReply);
-                cm.Items.Add(miWrite);
-
-                MessagesList.ContextMenu = cm;
-            }
-            catch
-            {
-                e.Handled = true;
-            }
+                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
+            }));
         }
 
         private void Vm_NewMessageArrived(MessageDisplayItem _)
         {
-            if (!IsActive)
-                return;
+            if (!IsActive) return;
 
             var now = DateTime.UtcNow;
-            if ((now - _lastNotifyUtc).TotalMilliseconds < 900)
-                return;
-
+            if ((now - _lastNotifyUtc).TotalMilliseconds < 900) return;
             _lastNotifyUtc = now;
 
             Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
@@ -113,12 +102,10 @@ namespace TelegramWin.Views
 
         private void Messages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
         {
-            if (_vm.Messages.Count == 0)
-                return;
+            if (_vm.Messages.Count == 0) return;
 
             bool shouldStick = _stickToBottom || _scroll == null;
-            if (!shouldStick)
-                return;
+            if (!shouldStick) return;
 
             Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
             {
@@ -131,25 +118,23 @@ namespace TelegramWin.Views
                     MessagesList.UpdateLayout();
                     _scroll ??= FindVisualChild<ScrollViewer>(MessagesList);
 
-                    if (_scroll != null)
-                        _scroll.ScrollToEnd();
-                    else
-                        MessagesList.ScrollIntoView(last);
+                    if (_scroll != null) _scroll.ScrollToEnd();
+                    else MessagesList.ScrollIntoView(last);
 
                     MessagesList.UpdateLayout();
                 }
                 catch { }
                 finally
                 {
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
+                    Dispatcher.BeginInvoke(DispatcherPriority.Background,
+                        new Action(() => _programmaticScroll = false));
                 }
             }));
         }
 
         private async void Scroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
         {
-            if (_scroll == null)
-                return;
+            if (_scroll == null) return;
 
             if (!_programmaticScroll)
             {
@@ -176,7 +161,8 @@ namespace TelegramWin.Views
 
                     _programmaticScroll = true;
                     _scroll.ScrollToVerticalOffset(oldOffset + delta);
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
+                    Dispatcher.BeginInvoke(DispatcherPriority.Background,
+                        new Action(() => _programmaticScroll = false));
                 }));
             }
         }
@@ -191,11 +177,8 @@ namespace TelegramWin.Views
 
         private void TryFocusLastMessageWithRetries(int attempts, int delayMs)
         {
-            if (_initialFocusDone)
-                return;
-
-            if (_vm.Messages.Count == 0)
-                return;
+            if (_initialFocusDone) return;
+            if (_vm.Messages.Count == 0) return;
 
             var last = _vm.Messages.Last();
             _vm.SelectedMessage = last;
@@ -211,7 +194,8 @@ namespace TelegramWin.Views
             catch { }
             finally
             {
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
+                Dispatcher.BeginInvoke(DispatcherPriority.Background,
+                    new Action(() => _programmaticScroll = false));
             }
 
             if (MessagesList.ItemContainerGenerator.ContainerFromItem(last) is FrameworkElement container)
@@ -231,12 +215,7 @@ namespace TelegramWin.Views
             attempts--;
             if (attempts <= 0)
             {
-                try
-                {
-                    Keyboard.Focus(MessagesList);
-                    MessagesList.Focus();
-                }
-                catch { }
+                try { Keyboard.Focus(MessagesList); MessagesList.Focus(); } catch { }
                 _initialFocusDone = true;
                 _stickToBottom = true;
                 return;
@@ -260,113 +239,83 @@ namespace TelegramWin.Views
             for (int i = 0; i < count; i++)
             {
                 var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T typed)
-                    return typed;
+                if (child is T typed) return typed;
 
                 var found = FindVisualChild<T>(child);
-                if (found != null)
-                    return found;
+                if (found != null) return found;
             }
             return null;
         }
 
+        // Esc в списке сообщений -> закрыть окно
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key == Key.Escape && !_vm.IsComposerVisible)
-            {
-                e.Handled = true;
-                Close();
-            }
+            if (e.Key != Key.Escape)
+                return;
+
+            if (Keyboard.FocusedElement is TextBox)
+                return;
+
+            e.Handled = true;
+            Close();
         }
 
-        private MessageDisplayItem? GetTagMessage(object sender)
-        {
-            try
-            {
-                if (sender is MenuItem mi)
-                    return mi.Tag as MessageDisplayItem;
-            }
-            catch { }
-            return null;
-        }
-
-        private void WriteToChat_Click(object sender, RoutedEventArgs e)
-        {
-            _vm.StartCompose();
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
-            }));
-        }
-
-        private void ReplyToMessage_Click(object sender, RoutedEventArgs e)
-        {
-            var msg = GetTagMessage(sender) ?? (MessagesList.SelectedItem as MessageDisplayItem);
-            _vm.StartReply(msg);
-
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
-            }));
-        }
-
-        private void CancelReply_Click(object sender, RoutedEventArgs e)
-        {
-            _vm.CancelReply();
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
-            }));
-        }
-
-        private async void ComposerBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        // Esc в редакторе:
+        // - если ответ -> отмена ответа
+        // - иначе -> скрыть редактор и вернуть фокус в список
+        private void ComposerBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
             {
                 e.Handled = true;
                 _stickToBottom = true;
 
-                bool ok = false;
-                try { ok = await _vm.SendCurrentAsync(); } catch { ok = false; }
-
-                if (ok)
-                {
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-                    {
-                        try
-                        {
-                            _programmaticScroll = true;
-                            MessagesList.UpdateLayout();
-                            _scroll ??= FindVisualChild<ScrollViewer>(MessagesList);
-                            _scroll?.ScrollToEnd();
-                        }
-                        catch { }
-                        finally
-                        {
-                            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _programmaticScroll = false));
-                        }
-                    }));
-                }
+                _ = SendAndScrollAsync();
                 return;
             }
 
-            if (e.Key == Key.Escape)
+            if (e.Key != Key.Escape)
+                return;
+
+            e.Handled = true;
+
+            if (_vm.IsReplyMode)
             {
-                e.Handled = true;
-
-                if (_vm.IsReplyMode)
-                {
-                    _vm.CancelReply();
-                    return;
-                }
-
-                _vm.HideComposer();
-
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-                {
-                    try { Keyboard.Focus(MessagesList); MessagesList.Focus(); } catch { }
-                }));
+                _vm.CancelReply();
+                return;
             }
+
+            _vm.HideComposer();
+
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try { Keyboard.Focus(MessagesList); MessagesList.Focus(); } catch { }
+            }));
+        }
+
+        private async System.Threading.Tasks.Task SendAndScrollAsync()
+        {
+            bool ok = false;
+            try { ok = await _vm.SendCurrentAsync(); } catch { ok = false; }
+
+            if (!ok) return;
+
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try
+                {
+                    _programmaticScroll = true;
+                    MessagesList.UpdateLayout();
+                    _scroll ??= FindVisualChild<ScrollViewer>(MessagesList);
+                    _scroll?.ScrollToEnd();
+                }
+                catch { }
+                finally
+                {
+                    Dispatcher.BeginInvoke(DispatcherPriority.Background,
+                        new Action(() => _programmaticScroll = false));
+                }
+            }));
         }
     }
 }

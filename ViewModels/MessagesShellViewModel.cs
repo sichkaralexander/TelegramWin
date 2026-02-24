@@ -43,7 +43,6 @@ namespace TelegramWin.ViewModels
 
         public ObservableCollection<MessageDisplayItem> Messages { get; } = new();
 
-        // Событие для окна (уведомление о новом сообщении, без обязательной смены фокуса)
         public event Action<MessageDisplayItem>? NewMessageArrived;
 
         public string Title
@@ -77,7 +76,13 @@ namespace TelegramWin.ViewModels
         public bool IsReplyMode
         {
             get => _isReplyMode;
-            set { _isReplyMode = value; OnPropertyChanged(); OnPropertyChanged(nameof(ReplyAutomationName)); }
+            set
+            {
+                _isReplyMode = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ReplyAutomationName));
+                OnPropertyChanged(nameof(ComposerAutomationName));
+            }
         }
 
         public long ReplyToMessageId
@@ -89,12 +94,25 @@ namespace TelegramWin.ViewModels
         public string ReplyPreviewText
         {
             get => _replyPreviewText;
-            set { _replyPreviewText = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(ReplyAutomationName)); }
+            set
+            {
+                _replyPreviewText = value ?? "";
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ReplyAutomationName));
+                OnPropertyChanged(nameof(ComposerAutomationName));
+            }
         }
 
+        // Было: "Ответ на сообщение: ..."
+        // Теперь короче и понятнее:
         public string ReplyAutomationName => IsReplyMode
-            ? ("Ответ на сообщение: " + (ReplyPreviewText ?? ""))
+            ? ("Ответ на: " + (ReplyPreviewText ?? ""))
             : "";
+
+        // ВАЖНО: это будет озвучиваться JAWS как имя поля ввода
+        public string ComposerAutomationName => IsReplyMode
+            ? ("Поле ввода. " + ReplyAutomationName)
+            : "Поле ввода сообщения";
 
         public string ComposerText
         {
@@ -110,7 +128,6 @@ namespace TelegramWin.ViewModels
 
             _ui = SynchronizationContext.Current ?? new SynchronizationContext();
 
-            // Подписка на апдейты TDLib (живые сообщения)
             _td.UpdateReceivedPublic += OnUpdate;
         }
 
@@ -133,6 +150,7 @@ namespace TelegramWin.ViewModels
             IsComposerVisible = true;
             IsReplyMode = true;
             ReplyToMessageId = message.Id;
+
             ReplyPreviewText = (message.Text ?? "").Trim();
             if (ReplyPreviewText.Length > 180)
                 ReplyPreviewText = ReplyPreviewText.Substring(0, 180) + "…";
@@ -182,6 +200,7 @@ namespace TelegramWin.ViewModels
 
             ComposerText = "";
 
+            // После отправки ответа — режим ответа должен исчезнуть
             if (IsReplyMode)
                 CancelReply();
 
