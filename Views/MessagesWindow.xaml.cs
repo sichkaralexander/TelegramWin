@@ -1,11 +1,8 @@
 using System;
-using System.Collections.Specialized;
-using System.Linq;
-using System.Media;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 using System.Windows.Threading;
 using TelegramWin.Services;
 using TelegramWin.ViewModels;
@@ -14,308 +11,182 @@ namespace TelegramWin.Views
 {
     public partial class MessagesWindow : Window
     {
-        private readonly MessagesShellViewModel _vm;
-
-        private bool _initialFocusDone;
-
-        private ScrollViewer? _scroll;
-        private bool _stickToBottom = true;
-        private bool _programmaticScroll;
-
-        private DateTime _lastNotifyUtc = DateTime.MinValue;
+        private MessagesShellViewModel? Vm => DataContext as MessagesShellViewModel;
 
         public MessagesWindow(TdLibService td, long chatId, string title)
         {
             InitializeComponent();
 
-            _vm = new MessagesShellViewModel(td, chatId, title);
-            DataContext = _vm;
+            DataContext = new MessagesShellViewModel(td, chatId, title);
+            Title = title;
 
-            _vm.NewMessageArrived += Vm_NewMessageArrived;
-            _vm.Messages.CollectionChanged += Messages_CollectionChanged;
+            Loaded += MessagesWindow_Loaded;
+        }
 
-            Loaded += async (_, __) =>
+        public MessagesWindow()
+        {
+            InitializeComponent();
+            Loaded += MessagesWindow_Loaded;
+        }
+
+        private async void MessagesWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (Vm == null) return;
+
+            try
             {
-                await _vm.LoadLatestMessagesAsync(80);
+                await Vm.LoadLatestMessagesAsync(60);
+            }
+            catch { }
 
-                _scroll = FindVisualChild<ScrollViewer>(MessagesList);
-                if (_scroll != null)
-                    _scroll.ScrollChanged += Scroll_ScrollChanged;
-
-                BeginInitialFocus();
-            };
-
-            ContentRendered += (_, __) =>
-            {
-                if (!_initialFocusDone)
-                    BeginInitialFocus();
-            };
-
-            Closed += (_, __) =>
-            {
-                try { _vm.NewMessageArrived -= Vm_NewMessageArrived; } catch { }
-                try { _vm.Messages.CollectionChanged -= Messages_CollectionChanged; } catch { }
-                try { _vm.Dispose(); } catch { }
-            };
+            // Ключевое: поставить фокус на ПОСЛЕДНЕЕ сообщение, чтобы JAWS сразу прочитал.
+            await FocusLastMessageWithRetriesAsync();
         }
 
         private void ReplyButton_Click(object sender, RoutedEventArgs e)
         {
-            var msg = (sender as FrameworkElement)?.Tag as MessageDisplayItem;
-            _vm.StartReply(msg);
-            FocusComposer();
+            if (Vm == null) return;
+            if (Vm.SelectedMessage == null) return;
+
+            Vm.StartReply(Vm.SelectedMessage);
+            ShowComposerAndFocus();
         }
 
         private void WriteButton_Click(object sender, RoutedEventArgs e)
         {
-            _vm.StartCompose();
-            FocusComposer();
+            if (Vm == null) return;
+
+            Vm.StartCompose();
+            ShowComposerAndFocus();
         }
 
         private void CancelReply_Click(object sender, RoutedEventArgs e)
         {
-            _vm.CancelReply();
-            FocusComposer();
+            if (Vm == null) return;
+
+            Vm.CancelReply();
+            ShowComposerAndFocus();
         }
 
-        private void FocusComposer()
+        private async void SendButton_Click(object sender, RoutedEventArgs e)
         {
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                try { ComposerBox.Focus(); Keyboard.Focus(ComposerBox); } catch { }
-            }));
+            await SendAndHideComposerAsync();
         }
 
-        private void Vm_NewMessageArrived(MessageDisplayItem _)
+        private async void ComposerBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (!IsActive) return;
+            if (Vm == null) return;
 
-            var now = DateTime.UtcNow;
-            if ((now - _lastNotifyUtc).TotalMilliseconds < 900) return;
-            _lastNotifyUtc = now;
-
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                try { SystemSounds.Asterisk.Play(); } catch { }
-            }));
-        }
-
-        private void Messages_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-        {
-            if (_vm.Messages.Count == 0) return;
-
-            bool shouldStick = _stickToBottom || _scroll == null;
-            if (!shouldStick) return;
-
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                try
-                {
-                    var last = _vm.Messages.Last();
-
-                    _programmaticScroll = true;
-
-                    MessagesList.UpdateLayout();
-                    _scroll ??= FindVisualChild<ScrollViewer>(MessagesList);
-
-                    if (_scroll != null) _scroll.ScrollToEnd();
-                    else MessagesList.ScrollIntoView(last);
-
-                    MessagesList.UpdateLayout();
-                }
-                catch { }
-                finally
-                {
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background,
-                        new Action(() => _programmaticScroll = false));
-                }
-            }));
-        }
-
-        private async void Scroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
-        {
-            if (_scroll == null) return;
-
-            if (!_programmaticScroll)
-            {
-                double bottomThreshold = 2.0;
-                bool atBottom = _scroll.VerticalOffset >= (_scroll.ScrollableHeight - bottomThreshold);
-                _stickToBottom = atBottom;
-            }
-
-            if (_scroll.VerticalOffset <= 0.0 && _vm.CanLoadOlder)
-            {
-                _stickToBottom = false;
-
-                double oldExtent = _scroll.ExtentHeight;
-                double oldOffset = _scroll.VerticalOffset;
-
-                await _vm.LoadOlderMessagesAsync(30);
-
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-                {
-                    if (_scroll == null) return;
-
-                    double newExtent = _scroll.ExtentHeight;
-                    double delta = newExtent - oldExtent;
-
-                    _programmaticScroll = true;
-                    _scroll.ScrollToVerticalOffset(oldOffset + delta);
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background,
-                        new Action(() => _programmaticScroll = false));
-                }));
-            }
-        }
-
-        private void BeginInitialFocus()
-        {
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
-            {
-                TryFocusLastMessageWithRetries(attempts: 10, delayMs: 80);
-            }));
-        }
-
-        private void TryFocusLastMessageWithRetries(int attempts, int delayMs)
-        {
-            if (_initialFocusDone) return;
-            if (_vm.Messages.Count == 0) return;
-
-            var last = _vm.Messages.Last();
-            _vm.SelectedMessage = last;
-            MessagesList.SelectedItem = last;
-
-            try
-            {
-                _programmaticScroll = true;
-                MessagesList.UpdateLayout();
-                MessagesList.ScrollIntoView(last);
-                MessagesList.UpdateLayout();
-            }
-            catch { }
-            finally
-            {
-                Dispatcher.BeginInvoke(DispatcherPriority.Background,
-                    new Action(() => _programmaticScroll = false));
-            }
-
-            if (MessagesList.ItemContainerGenerator.ContainerFromItem(last) is FrameworkElement container)
-            {
-                try
-                {
-                    container.BringIntoView();
-                    Keyboard.Focus(container);
-                    container.Focus();
-                    _initialFocusDone = true;
-                    _stickToBottom = true;
-                    return;
-                }
-                catch { }
-            }
-
-            attempts--;
-            if (attempts <= 0)
-            {
-                try { Keyboard.Focus(MessagesList); MessagesList.Focus(); } catch { }
-                _initialFocusDone = true;
-                _stickToBottom = true;
-                return;
-            }
-
-            var timer = new DispatcherTimer(DispatcherPriority.Background)
-            {
-                Interval = TimeSpan.FromMilliseconds(delayMs)
-            };
-            timer.Tick += (_, __) =>
-            {
-                timer.Stop();
-                TryFocusLastMessageWithRetries(attempts, delayMs);
-            };
-            timer.Start();
-        }
-
-        private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
-        {
-            int count = VisualTreeHelper.GetChildrenCount(parent);
-            for (int i = 0; i < count; i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T typed) return typed;
-
-                var found = FindVisualChild<T>(child);
-                if (found != null) return found;
-            }
-            return null;
-        }
-
-        // Esc в списке сообщений -> закрыть окно
-        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key != Key.Escape)
-                return;
-
-            if (Keyboard.FocusedElement is TextBox)
-                return;
-
-            e.Handled = true;
-            Close();
-        }
-
-        // Esc в редакторе:
-        // - если ответ -> отмена ответа
-        // - иначе -> скрыть редактор и вернуть фокус в список
-        private void ComposerBox_PreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+            if (e.Key == Key.Escape)
             {
                 e.Handled = true;
-                _stickToBottom = true;
-
-                _ = SendAndScrollAsync();
+                Close();
                 return;
             }
 
-            if (e.Key != Key.Escape)
-                return;
-
-            e.Handled = true;
-
-            if (_vm.IsReplyMode)
+            if (e.Key == Key.Return || e.Key == Key.Enter)
             {
-                _vm.CancelReply();
-                return;
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                    return;
+
+                e.Handled = true;
+                await SendAndHideComposerAsync();
             }
-
-            _vm.HideComposer();
-
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                try { Keyboard.Focus(MessagesList); MessagesList.Focus(); } catch { }
-            }));
         }
 
-        private async System.Threading.Tasks.Task SendAndScrollAsync()
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            bool ok = false;
-            try { ok = await _vm.SendCurrentAsync(); } catch { ok = false; }
+            if (e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                Close();
+            }
+        }
 
-            if (!ok) return;
+        private async Task SendAndHideComposerAsync()
+        {
+            if (Vm == null) return;
 
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            var ok = await Vm.SendCurrentAsync();
+            if (!ok)
+            {
+                ShowComposerAndFocus();
+                return;
+            }
+
+            // после отправки — закрываем редактор
+            Vm.HideComposer();
+
+            // и возвращаемся к последнему сообщению (вниз), чтобы навигация стрелками была логичной
+            await FocusLastMessageWithRetriesAsync();
+        }
+
+        private void ShowComposerAndFocus()
+        {
+            if (Vm == null) return;
+
+            Vm.IsComposerVisible = true;
+
+            Dispatcher.BeginInvoke(() =>
             {
                 try
                 {
-                    _programmaticScroll = true;
-                    MessagesList.UpdateLayout();
-                    _scroll ??= FindVisualChild<ScrollViewer>(MessagesList);
-                    _scroll?.ScrollToEnd();
+                    ComposerBox.Focus();
+                    Keyboard.Focus(ComposerBox);
+                    var len = ComposerBox.Text?.Length ?? 0;
+                    ComposerBox.Select(len, 0);
                 }
                 catch { }
-                finally
+            }, DispatcherPriority.Loaded);
+        }
+
+        private async Task FocusLastMessageWithRetriesAsync()
+        {
+            // 3 попытки: сразу / через 80мс / через 180мс
+            await FocusLastMessageOnceAsync();
+            await Task.Delay(80);
+            await FocusLastMessageOnceAsync();
+            await Task.Delay(180);
+            await FocusLastMessageOnceAsync();
+        }
+
+        private async Task FocusLastMessageOnceAsync()
+        {
+            if (Vm == null) return;
+            if (MessagesList == null) return;
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                try
                 {
-                    Dispatcher.BeginInvoke(DispatcherPriority.Background,
-                        new Action(() => _programmaticScroll = false));
+                    var count = Vm.Messages?.Count ?? 0;
+                    if (count <= 0) return;
+
+                    int lastIndex = count - 1;
+
+                    // Важно: меняем SelectedItem -> JAWS чаще начинает читать
+                    var lastItem = Vm.Messages[lastIndex];
+                    Vm.SelectedMessage = lastItem;
+
+                    MessagesList.SelectedIndex = lastIndex;
+                    MessagesList.ScrollIntoView(lastItem);
+                    MessagesList.UpdateLayout();
+
+                    // Фокус на КОНТЕЙНЕРЕ (ListBoxItem), а не на ListBox.
+                    if (MessagesList.ItemContainerGenerator.ContainerFromIndex(lastIndex) is ListBoxItem lbi)
+                    {
+                        lbi.Focus();
+                        Keyboard.Focus(lbi);
+                    }
+                    else
+                    {
+                        // fallback
+                        MessagesList.Focus();
+                        Keyboard.Focus(MessagesList);
+                    }
                 }
-            }));
+                catch { }
+            }, DispatcherPriority.Background);
         }
     }
 }

@@ -1,112 +1,140 @@
 <Window x:Class="TelegramWin.Views.MessagesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
         Title="Сообщения"
-        Height="560" Width="760"
+        Height="700" Width="520"
         WindowStartupLocation="CenterOwner"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown"
+        Background="#FF0B0B0B"
+        Foreground="White">
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Оформление элементов списка сообщений -->
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Background" Value="#FF111111"/>
+            <Setter Property="BorderBrush" Value="#FF2A2A2A"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <!-- JAWS будет читать это -->
+            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibleText}"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#FF1B1B1B"/>
+                    <Setter Property="BorderBrush" Value="#FF6A5ACD"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <DockPanel LastChildFill="True" Margin="10">
 
-        <TextBlock Grid.Row="0"
-                   Text="{Binding Title}"
-                   FontSize="18"
-                   FontWeight="SemiBold"
-                   Margin="0,0,0,12"/>
+        <!-- Нижняя панель: кнопки + редактор -->
+        <Border DockPanel.Dock="Bottom"
+                BorderBrush="#FF2A2A2A"
+                BorderThickness="1"
+                Padding="8"
+                Margin="0,8,0,0"
+                Background="#FF0F0F0F">
+            <StackPanel>
 
+                <!-- Кнопки -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button x:Name="ReplyButton"
+                            Content="Ответить"
+                            MinWidth="110"
+                            Margin="0,0,8,0"
+                            Click="ReplyButton_Click"/>
+                    <Button x:Name="WriteButton"
+                            Content="Написать"
+                            MinWidth="110"
+                            Click="WriteButton_Click"/>
+                </StackPanel>
+
+                <!-- Редактор -->
+                <Border Visibility="{Binding IsComposerVisible, Converter={StaticResource BoolToVis}}"
+                        BorderBrush="#FF6A5ACD"
+                        BorderThickness="1"
+                        Padding="8"
+                        Background="#FF0B0B0B">
+                    <StackPanel>
+
+                        <!-- Плашка ответа -->
+                        <DockPanel Margin="0,0,0,6"
+                                   Visibility="{Binding IsReplyMode, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Ответ на:"
+                                       FontWeight="Bold"
+                                       Margin="0,0,6,0"
+                                       DockPanel.Dock="Left"/>
+                            <TextBlock Text="{Binding ReplyPreviewText}"
+                                       TextWrapping="Wrap"
+                                       DockPanel.Dock="Left"/>
+                            <Button Content="Отменить"
+                                    Margin="10,0,0,0"
+                                    DockPanel.Dock="Right"
+                                    Click="CancelReply_Click"/>
+                        </DockPanel>
+
+                        <TextBox x:Name="ComposerBox"
+                                 MinHeight="70"
+                                 Text="{Binding ComposerText, UpdateSourceTrigger=PropertyChanged}"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 PreviewKeyDown="ComposerBox_PreviewKeyDown"
+                                 Background="#FF111111"
+                                 Foreground="White"
+                                 BorderBrush="#FF2A2A2A"
+                                 BorderThickness="1"
+                                 AutomationProperties.Name="{Binding ComposerAutomationName}"/>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button x:Name="SendButton"
+                                    Content="Отправить"
+                                    MinWidth="110"
+                                    Click="SendButton_Click"/>
+                            <TextBlock Margin="10,4,0,0"
+                                       Foreground="#FFB8B8B8"
+                                       Text="Enter — отправить, Shift+Enter — новая строка, Esc — закрыть окно сообщений"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </Border>
+
+        <!-- Список сообщений -->
         <ListBox x:Name="MessagesList"
-                 Grid.Row="1"
                  ItemsSource="{Binding Messages}"
                  SelectedItem="{Binding SelectedMessage, Mode=TwoWay}"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                 AutomationProperties.Name="Сообщения">
-
-            <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem">
-                    <Setter Property="AutomationProperties.Name"
-                            Value="{Binding AccessibleText}"/>
-
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="ListBoxItem">
-                                <Border Padding="6"
-                                        Background="{TemplateBinding Background}">
-                                    <StackPanel>
-                                        <ContentPresenter/>
-                                        <StackPanel x:Name="ActionPanel"
-                                                    Orientation="Horizontal"
-                                                    Margin="0,6,0,0"
-                                                    Visibility="Collapsed">
-                                            <Button Content="Ответить"
-                                                    Tag="{Binding}"
-                                                    Margin="0,0,8,0"
-                                                    Click="ReplyButton_Click"/>
-                                            <Button Content="Написать"
-                                                    Tag="{Binding}"
-                                                    Click="WriteButton_Click"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Border>
-
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="ActionPanel"
-                                                Property="Visibility"
-                                                Value="Visible"/>
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                </Style>
-            </ListBox.ItemContainerStyle>
-
+                 Background="#FF0B0B0B"
+                 BorderBrush="#FF2A2A2A"
+                 BorderThickness="1"
+                 AutomationProperties.Name="Список сообщений">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <StackPanel>
-                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding Meta}" Opacity="0.7" FontSize="12"/>
+                        <TextBlock Text="{Binding Text}"
+                                   TextWrapping="Wrap"
+                                   Foreground="White"/>
+                        <TextBlock Text="{Binding Meta}"
+                                   Margin="0,4,0,0"
+                                   FontSize="12"
+                                   Foreground="#FFB8B8B8"/>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <Border Grid.Row="2"
-                Margin="0,12,0,0"
-                Padding="10"
-                BorderBrush="#CCC"
-                BorderThickness="1"
-                Visibility="{Binding IsComposerVisible, Converter={StaticResource BoolToVis}}">
-
-            <StackPanel>
-                <DockPanel Margin="0,0,0,6"
-                           Visibility="{Binding IsReplyMode, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="{Binding ReplyAutomationName}"
-                               Margin="0,0,8,0"
-                               TextWrapping="Wrap"
-                               AutomationProperties.Name="{Binding ReplyAutomationName}"/>
-                    <Button Content="Отменить"
-                            Click="CancelReply_Click"/>
-                </DockPanel>
-
-                <TextBox x:Name="ComposerBox"
-                         Text="{Binding ComposerText, Mode=TwoWay}"
-                         AcceptsReturn="True"
-                         TextWrapping="Wrap"
-                         MinHeight="60"
-                         AutomationProperties.Name="{Binding ComposerAutomationName}"
-                         PreviewKeyDown="ComposerBox_PreviewKeyDown"/>
-            </StackPanel>
-        </Border>
-
-    </Grid>
+    </DockPanel>
 </Window>
