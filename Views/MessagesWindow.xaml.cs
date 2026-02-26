@@ -12,6 +12,7 @@ namespace TelegramWin.Views
     public partial class MessagesWindow : Window
     {
         private MessagesShellViewModel? Vm => DataContext as MessagesShellViewModel;
+        private readonly Announcer _announcer;
 
         public MessagesWindow(TdLibService td, long chatId, string title)
         {
@@ -20,18 +21,34 @@ namespace TelegramWin.Views
             DataContext = new MessagesShellViewModel(td, chatId, title);
             Title = title;
 
+            _announcer = new Announcer(this, liveRegionName: "LiveStatus");
+
             Loaded += MessagesWindow_Loaded;
+            Closed += MessagesWindow_Closed;
         }
 
         public MessagesWindow()
         {
             InitializeComponent();
+            _announcer = new Announcer(this, liveRegionName: "LiveStatus");
             Loaded += MessagesWindow_Loaded;
+            Closed += MessagesWindow_Closed;
+        }
+
+        private void MessagesWindow_Closed(object? sender, EventArgs e)
+        {
+            if (Vm != null)
+            {
+                Vm.NewMessageArrived -= Vm_NewMessageArrived;
+            }
         }
 
         private async void MessagesWindow_Loaded(object sender, RoutedEventArgs e)
         {
             if (Vm == null) return;
+
+            Vm.NewMessageArrived -= Vm_NewMessageArrived;
+            Vm.NewMessageArrived += Vm_NewMessageArrived;
 
             try
             {
@@ -39,8 +56,19 @@ namespace TelegramWin.Views
             }
             catch { }
 
+            _announcer.Say($"Чат открыт: {Title}");
+
             // Ключевое: поставить фокус на ПОСЛЕДНЕЕ сообщение, чтобы JAWS сразу прочитал.
             await FocusLastMessageWithRetriesAsync();
+        }
+
+        private void Vm_NewMessageArrived(MessageDisplayItem item)
+        {
+            if (item == null)
+                return;
+
+            // Без прыгающего фокуса: только озвучка события.
+            _announcer.Say("Новое сообщение. " + item.AccessibleText);
         }
 
         private void ReplyButton_Click(object sender, RoutedEventArgs e)
@@ -110,9 +138,12 @@ namespace TelegramWin.Views
             var ok = await Vm.SendCurrentAsync();
             if (!ok)
             {
+                _announcer.Say("Не удалось отправить сообщение");
                 ShowComposerAndFocus();
                 return;
             }
+
+            _announcer.Say("Сообщение отправлено");
 
             // после отправки — закрываем редактор
             Vm.HideComposer();
