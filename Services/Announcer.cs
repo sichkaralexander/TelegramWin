@@ -2,6 +2,8 @@ using System;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Threading;
 
 namespace TelegramWin.Services
 {
@@ -33,13 +35,38 @@ namespace TelegramWin.Services
 
                 // Трюк для повторных фраз: сначала очистить, потом выставить.
                 AutomationProperties.SetName(live, "");
-                AutomationProperties.SetName(live, text);
+
+                // Небольшая задержка нужна, чтобы JAWS успел увидеть изменение.
+                var timer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(35),
+                    Priority = DispatcherPriority.Background
+                };
+
+                EventHandler? tick = null;
+                tick = (_, _) =>
+                {
+                    timer.Stop();
+                    timer.Tick -= tick;
+
+                    AutomationProperties.SetName(live, text);
+                    RaiseLiveRegionChanged(live);
+                };
+
+                timer.Tick += tick;
+                timer.Start();
             }
 
             if (_uiContext != null)
                 _uiContext.Post(_ => Work(), null);
             else
                 Work();
+        }
+
+        private static void RaiseLiveRegionChanged(FrameworkElement live)
+        {
+            var peer = UIElementAutomationPeer.FromElement(live) ?? UIElementAutomationPeer.CreatePeerForElement(live);
+            peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
     }
 }
