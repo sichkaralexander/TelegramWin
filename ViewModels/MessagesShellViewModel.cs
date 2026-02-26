@@ -430,7 +430,8 @@ namespace TelegramWin.ViewModels
             return new MessageDisplayItem(
                 id: m.Id,
                 text: text,
-                meta: $"{author} {dt:dd.MM.yyyy HH:mm}"
+                meta: $"{author} {dt:dd.MM.yyyy HH:mm}",
+                isOutgoing: IsOutgoingMessage(m)
             );
         }
 
@@ -476,6 +477,20 @@ namespace TelegramWin.ViewModels
                 });
             }
             catch { }
+        }
+
+
+        private static bool IsOutgoingMessage(TdApi.Message m)
+        {
+            try
+            {
+                var p = m.GetType().GetProperty("IsOutgoing", BindingFlags.Public | BindingFlags.Instance);
+                if (p != null && p.PropertyType == typeof(bool))
+                    return (bool)(p.GetValue(m) ?? false);
+            }
+            catch { }
+
+            return false;
         }
 
         private string ExtractText(TdApi.Message m)
