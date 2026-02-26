@@ -37,6 +37,15 @@
 
     <DockPanel LastChildFill="True" Margin="10">
 
+        <TextBlock x:Name="LiveStatus"
+                   Opacity="0.01"
+                   Height="1"
+                   Focusable="False"
+                   IsHitTestVisible="False"
+                   AutomationProperties.LiveSetting="Assertive"
+                   AutomationProperties.Name=""
+                   DockPanel.Dock="Top"/>
+
         <!-- Нижняя панель: кнопки + редактор -->
         <Border DockPanel.Dock="Bottom"
                 BorderBrush="#FF2A2A2A"

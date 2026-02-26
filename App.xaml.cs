@@ -24,8 +24,7 @@ namespace TelegramWin
             _singleInstanceMutex = new Mutex(true, "TelegramWin_SingleInstance_Mutex", out bool createdNew);
             if (!createdNew)
             {
-                MessageBox.Show("TelegramWin уже запущен. Закрой старое окно и попробуй снова.", "TelegramWin",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                WriteCrash("SingleInstance", new InvalidOperationException("Второй экземпляр приложения не разрешён."));
                 Shutdown(0);
                 return;
             }
@@ -62,8 +61,6 @@ namespace TelegramWin
             catch (Exception ex)
             {
                 WriteCrash("OnStartup TRY/CATCH", ex);
-                MessageBox.Show("TelegramWin упал при запуске. Смотри crashlog.txt рядом с exe.", "TelegramWin",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(-1);
             }
         }

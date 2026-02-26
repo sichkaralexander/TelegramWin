@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -13,6 +14,7 @@ namespace TelegramWin.Views
     {
         private readonly TdLibService _td;
         private readonly ChatsViewModel _vm;
+        private readonly Announcer _announcer;
 
         public ChatsWindow(TdLibService td)
         {
@@ -22,11 +24,30 @@ namespace TelegramWin.Views
             _vm = new ChatsViewModel(td);
             DataContext = _vm;
 
+            _announcer = new Announcer(this, liveRegionName: "LiveStatus", statusName: "StatusTextBlock");
+
             Loaded += async (_, __) =>
             {
                 try { ChatsList.Focus(); } catch { }
+                _announcer.Say("Окно чатов открыто");
                 await _vm.LoadAsync();
             };
+
+            _vm.PropertyChanged += VmOnPropertyChanged;
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            _vm.PropertyChanged -= VmOnPropertyChanged;
+            base.OnClosed(e);
+        }
+
+        private void VmOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ChatsViewModel.Status))
+            {
+                _announcer.Say(_vm.Status);
+            }
         }
 
         private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -38,7 +59,7 @@ namespace TelegramWin.Views
                 return;
 
             e.Handled = true;
-            OpenSelectedChat_Debug();
+            OpenSelectedChat();
         }
 
         private static bool IsFocusInside(DependencyObject root)
@@ -73,16 +94,16 @@ namespace TelegramWin.Views
             if (e.Key == Key.Enter)
             {
                 e.Handled = true;
-                OpenSelectedChat_Debug();
+                OpenSelectedChat();
             }
         }
 
         private void ChatsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            OpenSelectedChat_Debug();
+            OpenSelectedChat();
         }
 
-        private void OpenSelectedChat_Debug()
+        private void OpenSelectedChat()
         {
             try
             {
@@ -90,8 +111,8 @@ namespace TelegramWin.Views
 
                 if (item == null)
                 {
-                    MessageBox.Show("SelectedItem = null. Выдели чат стрелками и попробуй Enter.", "DEBUG",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    _vm.Status = "Чат не выбран. Выберите чат стрелками и нажмите Enter.";
+                    _announcer.Say(_vm.Status);
                     return;
                 }
 
@@ -102,8 +123,8 @@ namespace TelegramWin.Views
 
                 if (chatId == 0)
                 {
-                    MessageBox.Show("chatId = 0 (не удалось получить Id чата из объекта). Сообщи мне этот текст.",
-                        "DEBUG", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    _vm.Status = "Не удалось открыть чат: отсутствует идентификатор.";
+                    _announcer.Say(_vm.Status);
                     return;
                 }
 
@@ -127,13 +148,14 @@ namespace TelegramWin.Views
                     catch { }
                 };
 
+                _announcer.Say($"Открываю чат: {title}");
                 w.Show();
                 w.Activate();
             }
-            catch (Exception ex)
+            catch
             {
-                MessageBox.Show("OpenSelectedChat exception:\r\n" + ex, "DEBUG",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                _vm.Status = "Ошибка при открытии чата.";
+                _announcer.Say(_vm.Status);
             }
         }
 

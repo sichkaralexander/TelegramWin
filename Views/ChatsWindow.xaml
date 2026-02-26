@@ -5,6 +5,13 @@
         WindowStartupLocation="CenterScreen"
         PreviewKeyDown="Window_PreviewKeyDown">
     <Grid Margin="16">
+        <TextBlock x:Name="LiveStatus"
+                   Opacity="0.01"
+                   Height="1"
+                   Focusable="False"
+                   IsHitTestVisible="False"
+                   AutomationProperties.LiveSetting="Assertive"
+                   AutomationProperties.Name="" />
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -12,8 +19,7 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,12">
             <TextBlock Text="Чаты" FontSize="18" FontWeight="SemiBold"/>
-            <TextBlock Text="{Binding Status}" Margin="0,6,0,0"
-                       AutomationProperties.LiveSetting="Assertive"/>
+            <TextBlock x:Name="StatusTextBlock" Text="{Binding Status}" Margin="0,6,0,0"/>
         </StackPanel>
 
         <ListBox x:Name="ChatsList"
