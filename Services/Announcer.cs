@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
@@ -10,8 +10,9 @@ namespace TelegramWin.Services
     /// <summary>
     /// Озвучка статусов для JAWS через Live Region.
     /// Работает так:
-    /// - В окне должен быть элемент (обычно TextBlock) с AutomationId="LiveStatus"
-    /// - Мы меняем AutomationProperties.Name, и скринридер озвучивает.
+    /// - В окне должен быть элемент (обычно TextBlock) с x:Name="LiveStatus"
+    /// - Мы меняем AutomationProperties.Name
+    /// - Принудительно вызываем LiveRegionChanged
     /// </summary>
     public sealed class Announcer
     {
@@ -26,21 +27,21 @@ namespace TelegramWin.Services
 
         public void Say(string text)
         {
-            if (string.IsNullOrWhiteSpace(text)) return;
+            if (string.IsNullOrWhiteSpace(text))
+                return;
 
             void Work()
             {
                 var live = _root.FindName("LiveStatus") as FrameworkElement;
-                if (live == null) return;
+                if (live == null)
+                    return;
 
-                // Трюк для повторных фраз: сначала очистить, потом выставить.
+                // Сначала очистка — чтобы JAWS видел изменение даже для одинаковых фраз
                 AutomationProperties.SetName(live, "");
 
-                // Небольшая задержка нужна, чтобы JAWS успел увидеть изменение.
                 var timer = new DispatcherTimer
                 {
-                    Interval = TimeSpan.FromMilliseconds(35),
-                    Priority = DispatcherPriority.Background
+                    Interval = TimeSpan.FromMilliseconds(35)
                 };
 
                 EventHandler? tick = null;
@@ -65,7 +66,9 @@ namespace TelegramWin.Services
 
         private static void RaiseLiveRegionChanged(FrameworkElement live)
         {
-            var peer = UIElementAutomationPeer.FromElement(live) ?? UIElementAutomationPeer.CreatePeerForElement(live);
+            var peer = UIElementAutomationPeer.FromElement(live)
+                       ?? UIElementAutomationPeer.CreatePeerForElement(live);
+
             peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
         }
     }
