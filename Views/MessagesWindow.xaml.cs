@@ -68,34 +68,26 @@ namespace TelegramWin.Views
             // Для входящих всегда даём короткий системный звук.
             try { SystemSounds.Asterisk.Play(); } catch { }
 
-            // Озвучка только когда пользователь сейчас в окне сообщений и читает список.
+            // Озвучка только когда окно активно и пользователь находится на последнем сообщении.
             if (!IsActive)
                 return;
 
-            if (!(MessagesList.IsKeyboardFocusWithin || IsFocusInsideMessagesListItem()))
+            if (!IsUserAtLastMessage())
                 return;
 
             _announcer.Say(item.AccessibleText);
         }
 
-        private bool IsFocusInsideMessagesListItem()
+        private bool IsUserAtLastMessage()
         {
-            if (Keyboard.FocusedElement is not DependencyObject focused)
+            if (MessagesList == null)
                 return false;
 
-            var current = focused;
-            while (current != null)
-            {
-                if (ReferenceEquals(current, MessagesList))
-                    return true;
+            var count = MessagesList.Items.Count;
+            if (count <= 0)
+                return false;
 
-                if (current is ListBoxItem)
-                    return true;
-
-                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
-            }
-
-            return false;
+            return MessagesList.SelectedIndex == count - 1;
         }
 
         private void ReplyButton_Click(object sender, RoutedEventArgs e)
