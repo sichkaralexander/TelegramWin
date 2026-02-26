@@ -1,4 +1,5 @@
 using System;
+using System.Media;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,6 +12,8 @@ namespace TelegramWin.Views
 {
     public partial class MessagesWindow : Window
     {
+        private readonly Announcer _announcer;
+
         private MessagesShellViewModel? Vm => DataContext as MessagesShellViewModel;
 
         public MessagesWindow(TdLibService td, long chatId, string title)
@@ -20,18 +23,26 @@ namespace TelegramWin.Views
             DataContext = new MessagesShellViewModel(td, chatId, title);
             Title = title;
 
+            _announcer = new Announcer(this);
+
             Loaded += MessagesWindow_Loaded;
+            Unloaded += MessagesWindow_Unloaded;
         }
 
         public MessagesWindow()
         {
             InitializeComponent();
+            _announcer = new Announcer(this);
             Loaded += MessagesWindow_Loaded;
+            Unloaded += MessagesWindow_Unloaded;
         }
 
         private async void MessagesWindow_Loaded(object sender, RoutedEventArgs e)
         {
             if (Vm == null) return;
+
+            Vm.NewMessageArrived -= Vm_NewMessageArrived;
+            Vm.NewMessageArrived += Vm_NewMessageArrived;
 
             try
             {
@@ -41,6 +52,50 @@ namespace TelegramWin.Views
 
             // Ключевое: поставить фокус на ПОСЛЕДНЕЕ сообщение, чтобы JAWS сразу прочитал.
             await FocusLastMessageWithRetriesAsync();
+        }
+
+        private void MessagesWindow_Unloaded(object sender, RoutedEventArgs e)
+        {
+            if (Vm == null) return;
+            Vm.NewMessageArrived -= Vm_NewMessageArrived;
+        }
+
+        private void Vm_NewMessageArrived(MessageDisplayItem item)
+        {
+            if (item == null || item.IsOutgoing)
+                return;
+
+            // Для входящих всегда даём короткий системный звук.
+            try { SystemSounds.Asterisk.Play(); } catch { }
+
+            // Озвучка только когда пользователь сейчас в окне сообщений и читает список.
+            if (!IsActive)
+                return;
+
+            if (!(MessagesList.IsKeyboardFocusWithin || IsFocusInsideMessagesListItem()))
+                return;
+
+            _announcer.Say(item.AccessibleText);
+        }
+
+        private bool IsFocusInsideMessagesListItem()
+        {
+            if (Keyboard.FocusedElement is not DependencyObject focused)
+                return false;
+
+            var current = focused;
+            while (current != null)
+            {
+                if (ReferenceEquals(current, MessagesList))
+                    return true;
+
+                if (current is ListBoxItem)
+                    return true;
+
+                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+            }
+
+            return false;
         }
 
         private void ReplyButton_Click(object sender, RoutedEventArgs e)

@@ -37,6 +37,15 @@
 
     <DockPanel LastChildFill="True" Margin="10">
 
+        <!-- Live region для озвучки новых входящих сообщений через JAWS -->
+        <TextBlock x:Name="LiveStatus"
+                   Width="1" Height="1"
+                   Opacity="0"
+                   Focusable="False"
+                   IsHitTestVisible="False"
+                   AutomationProperties.LiveSetting="Assertive"
+                   AutomationProperties.Name=""/>
+
         <!-- Нижняя панель: кнопки + редактор -->
         <Border DockPanel.Dock="Bottom"
                 BorderBrush="#FF2A2A2A"
