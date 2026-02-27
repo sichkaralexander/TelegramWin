@@ -39,7 +39,7 @@ namespace TelegramWin.Services
                 // Сначала очистка — чтобы JAWS видел изменение даже для одинаковых фраз
                 AutomationProperties.SetName(live, "");
 
-                var timer = new DispatcherTimer
+                var timer = new DispatcherTimer(DispatcherPriority.Background, _root.Dispatcher)
                 {
                     Interval = TimeSpan.FromMilliseconds(35)
                 };
