@@ -3,6 +3,7 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
+using System.Windows.Controls;
 using System.Windows.Threading;
 
 namespace TelegramWin.Services
@@ -17,12 +18,11 @@ namespace TelegramWin.Services
     public sealed class Announcer
     {
         private readonly FrameworkElement _root;
-        private readonly SynchronizationContext? _uiContext;
+        private int _announceCounter;
 
         public Announcer(FrameworkElement root)
         {
             _root = root;
-            _uiContext = SynchronizationContext.Current;
         }
 
         public void Say(string text)
@@ -36,11 +36,15 @@ namespace TelegramWin.Services
                 if (live == null)
                     return;
 
-                // Сначала очистка — чтобы JAWS видел изменение даже для одинаковых фраз
-                AutomationProperties.SetName(live, "");
+                var sequence = Interlocked.Increment(ref _announceCounter);
+                var finalText = $"{text} #{sequence}";
+
+                // Сначала очистка — чтобы JAWS увидел изменение даже при одинаковых фразах.
+                SetLiveRegionText(live, string.Empty);
 
                 var timer = new DispatcherTimer
                 {
+                    Dispatcher = _root.Dispatcher,
                     Interval = TimeSpan.FromMilliseconds(35)
                 };
 
@@ -50,7 +54,7 @@ namespace TelegramWin.Services
                     timer.Stop();
                     timer.Tick -= tick;
 
-                    AutomationProperties.SetName(live, text);
+                    SetLiveRegionText(live, finalText);
                     RaiseLiveRegionChanged(live);
                 };
 
@@ -58,10 +62,18 @@ namespace TelegramWin.Services
                 timer.Start();
             }
 
-            if (_uiContext != null)
-                _uiContext.Post(_ => Work(), null);
-            else
+            if (_root.Dispatcher.CheckAccess())
                 Work();
+            else
+                _root.Dispatcher.BeginInvoke((Action)Work, DispatcherPriority.Background);
+        }
+
+        private static void SetLiveRegionText(FrameworkElement live, string value)
+        {
+            AutomationProperties.SetName(live, value);
+
+            if (live is TextBlock textBlock)
+                textBlock.Text = value;
         }
 
         private static void RaiseLiveRegionChanged(FrameworkElement live)
