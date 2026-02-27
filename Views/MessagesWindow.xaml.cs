@@ -62,7 +62,7 @@ namespace TelegramWin.Views
 
         private void Vm_NewMessageArrived(MessageDisplayItem item)
         {
-            if (item == null || item.IsOutgoing)
+            if (item == null)
                 return;
 
             // Для входящих всегда даём короткий системный звук.
@@ -73,6 +73,9 @@ namespace TelegramWin.Views
                 return;
 
             if (!(MessagesList.IsKeyboardFocusWithin || IsFocusInsideMessagesListItem()))
+                return;
+
+            if (item.IsOutgoing)
                 return;
 
             _announcer.Say(item.AccessibleText);
