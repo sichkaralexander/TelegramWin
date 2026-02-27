@@ -1,5 +1,7 @@
 using System;
+using System.IO;
 using System.Media;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -62,20 +64,99 @@ namespace TelegramWin.Views
 
         private void Vm_NewMessageArrived(MessageDisplayItem item)
         {
-            if (item == null || item.IsOutgoing)
-                return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (item == null)
+                    return;
 
-            // Для входящих всегда даём короткий системный звук.
-            try { SystemSounds.Asterisk.Play(); } catch { }
+                if (!item.IsOutgoing)
+                {
+                    WriteNewMessageLog(item);
 
-            // Озвучка только когда пользователь сейчас в окне сообщений и читает список.
-            if (!IsActive)
-                return;
+                    try
+                    {
+                        SystemSounds.Asterisk.Play();
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteNewMessageExceptionLog("SystemSounds.Asterisk.Play", ex);
+                    }
 
-            if (!(MessagesList.IsKeyboardFocusWithin || IsFocusInsideMessagesListItem()))
-                return;
+                    try
+                    {
+                        Console.Beep(800, 150);
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteNewMessageExceptionLog("Console.Beep", ex);
+                    }
 
-            _announcer.Say(item.AccessibleText);
+                    WriteNewMessageLog(item);
+                }
+
+                // Озвучка только когда пользователь сейчас в окне сообщений и читает список.
+                if (!IsActive)
+                    return;
+
+                if (!(MessagesList.IsKeyboardFocusWithin || IsFocusInsideMessagesListItem()))
+                    return;
+
+                if (item.IsOutgoing)
+                    return;
+
+                _announcer.Say(item.AccessibleText);
+            }), DispatcherPriority.Normal);
+        }
+
+        private void WriteNewMessageLog(MessageDisplayItem item)
+        {
+            try
+            {
+                const string logPath = @"E:\TelegramWin\newmessage.log";
+                var directory = Path.GetDirectoryName(logPath);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+
+                var text = item.AccessibleText ?? string.Empty;
+                text = text.Replace("\r", " ").Replace("\n", " ");
+                if (text.Length > 80)
+                    text = text.Substring(0, 80);
+
+                var line = string.Format(
+                    "{0:yyyy-MM-dd HH:mm:ss.fff} | {1} | {2} | {3} | {4}",
+                    DateTime.Now,
+                    IsActive,
+                    MessagesList.IsKeyboardFocusWithin,
+                    item.IsOutgoing,
+                    text);
+
+                File.AppendAllText(logPath, line + Environment.NewLine, Encoding.UTF8);
+            }
+            catch
+            {
+            }
+        }
+
+        private void WriteNewMessageExceptionLog(string operation, Exception ex)
+        {
+            try
+            {
+                const string logPath = @"E:\TelegramWin\newmessage.log";
+                var directory = Path.GetDirectoryName(logPath);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+
+                var line = string.Format(
+                    "{0:yyyy-MM-dd HH:mm:ss.fff} | EXCEPTION | {1} | {2}",
+                    DateTime.Now,
+                    operation,
+                    ex);
+
+                File.AppendAllText(logPath, line + Environment.NewLine, Encoding.UTF8);
+            }
+            catch
+            {
+            }
         }
 
         private bool IsFocusInsideMessagesListItem()
