@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Media;
 using System.Threading.Tasks;
 using System.Windows;
@@ -12,6 +13,7 @@ namespace TelegramWin.Views
 {
     public partial class MessagesWindow : Window
     {
+        private const string NewMessageLogPath = @"E:\TelegramWin\newmessage.log";
         private readonly Announcer _announcer;
 
         private MessagesShellViewModel? Vm => DataContext as MessagesShellViewModel;
@@ -60,7 +62,7 @@ namespace TelegramWin.Views
             Vm.NewMessageArrived -= Vm_NewMessageArrived;
         }
 
-        private void Vm_NewMessageArrived(MessageDisplayItem item)
+        private async void Vm_NewMessageArrived(MessageDisplayItem item)
         {
             if (item == null || item.IsOutgoing)
                 return;
@@ -75,7 +77,43 @@ namespace TelegramWin.Views
             if (!(MessagesList.IsKeyboardFocusWithin || IsFocusInsideMessagesListItem()))
                 return;
 
-            _announcer.Say(item.AccessibleText);
+            var announceText = item.AccessibleText ?? string.Empty;
+            LogAnnounce("BEFORE", announceText);
+
+            await Dispatcher.InvokeAsync(() => _announcer.Say(""), DispatcherPriority.Background);
+            await WaitOnUiThreadAsync(30);
+            await Dispatcher.InvokeAsync(() => _announcer.Say(announceText), DispatcherPriority.Background);
+
+            LogAnnounce("AFTER", announceText);
+        }
+
+        private static void LogAnnounce(string stage, string text)
+        {
+            try
+            {
+                var snippet = text.Length <= 80 ? text : text.Substring(0, 80);
+                var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} ANNOUNCE {stage}: {snippet}{Environment.NewLine}";
+                File.AppendAllText(NewMessageLogPath, line);
+            }
+            catch { }
+        }
+
+        private Task WaitOnUiThreadAsync(int milliseconds)
+        {
+            var tcs = new TaskCompletionSource<object?>();
+            var timer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+            {
+                Interval = TimeSpan.FromMilliseconds(milliseconds)
+            };
+
+            timer.Tick += (_, __) =>
+            {
+                timer.Stop();
+                tcs.TrySetResult(null);
+            };
+
+            timer.Start();
+            return tcs.Task;
         }
 
         private bool IsFocusInsideMessagesListItem()
