@@ -66,7 +66,7 @@ namespace TelegramWin.Views
                 return;
 
             // Для входящих всегда даём короткий системный звук.
-            try { SystemSounds.Asterisk.Play(); } catch { }
+            try { new SoundPlayer(@"C:\Windows\Media\Windows Notify System Generic.wav").Play(); } catch { }
 
             // Озвучка только когда пользователь сейчас в окне сообщений и читает список.
             if (!IsActive)
