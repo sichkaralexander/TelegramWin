@@ -62,11 +62,14 @@ namespace TelegramWin.Views
 
         private void Vm_NewMessageArrived(MessageDisplayItem item)
         {
-            if (item == null || item.IsOutgoing)
+            if (item == null)
                 return;
 
             // Для входящих всегда даём короткий системный звук.
-            try { SystemSounds.Asterisk.Play(); } catch { }
+            try { new System.Media.SoundPlayer(@"C:\Windows\Media\Windows Notify System Generic.wav").Play(); } catch { }
+
+            if (item.IsOutgoing)
+                return;
 
             // Озвучка только когда пользователь сейчас в окне сообщений и читает список.
             if (!IsActive)
